@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus } from 'lucide-react'
 
 function Dashboard({ onLogout, onBackToBooking }) {
   const [availability, setAvailability] = useState([])
@@ -27,14 +28,12 @@ function Dashboard({ onLogout, onBackToBooking }) {
     const { date, startTime, endTime, slotDuration } = newSlots
     const duration = parseInt(slotDuration)
     
-    // Convert times to minutes
     const [startHour, startMin] = startTime.split(':').map(Number)
     const [endHour, endMin] = endTime.split(':').map(Number)
     
     const startMinutes = startHour * 60 + startMin
     const endMinutes = endHour * 60 + endMin
     
-    // Generate all slots
     const generatedSlots = []
     let currentMinutes = startMinutes
     
@@ -44,7 +43,7 @@ function Dashboard({ onLogout, onBackToBooking }) {
       const timeString = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
       
       generatedSlots.push({
-        id: Date.now() + currentMinutes, // Unique ID
+        id: Date.now() + currentMinutes,
         date: date,
         time: timeString,
         duration: duration,
@@ -58,7 +57,6 @@ function Dashboard({ onLogout, onBackToBooking }) {
     setAvailability(updated)
     localStorage.setItem('availability', JSON.stringify(updated))
     
-    // Reset form
     setNewSlots({ date: '', startTime: '09:00', endTime: '17:00', slotDuration: '60' })
   }
 
@@ -69,12 +67,10 @@ function Dashboard({ onLogout, onBackToBooking }) {
   }
 
   const cancelBooking = (bookingId) => {
-    // Remove booking
     const updatedBookings = bookings.filter(b => b.id !== bookingId)
     setBookings(updatedBookings)
     localStorage.setItem('bookings', JSON.stringify(updatedBookings))
     
-    // Re-open the slot
     const booking = bookings.find(b => b.id === bookingId)
     if (booking) {
       const updatedAvailability = availability.map(slot => 
@@ -95,7 +91,6 @@ function Dashboard({ onLogout, onBackToBooking }) {
     })
   }
 
-  // Group slots by date for better visualization
   const slotsByDate = availability.reduce((acc, slot) => {
     if (!acc[slot.date]) acc[slot.date] = []
     acc[slot.date].push(slot)
@@ -103,65 +98,83 @@ function Dashboard({ onLogout, onBackToBooking }) {
   }, {})
 
   return (
-    <div className="container">
-      <div className="nav">
-        <button className="btn btn-secondary" onClick={onBackToBooking}>
-          ← Booking Page
+    <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10">
+      <div className="flex gap-3 mb-8">
+        <button 
+          onClick={onBackToBooking}
+          className="flex items-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
+        >
+          <Eye className="w-4 h-4" />
+          Booking Page
         </button>
-        <button className="btn btn-danger" onClick={onLogout}>
+        <button 
+          onClick={onLogout}
+          className="flex items-center gap-2 px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg shadow-red-500/30"
+        >
+          <LogOut className="w-4 h-4" />
           Logout
         </button>
       </div>
 
-      <div className="section-header">
-        <h1>📅 Dashboard</h1>
-        <p style={{ color: '#64748b', fontSize: '15px', marginTop: '8px' }}>
-          Manage your availability and view bookings
-        </p>
+      <div className="border-b-2 border-slate-100 pb-4 mb-8">
+        <h1 className="text-4xl font-bold text-slate-900 mb-2 tracking-tight">Dashboard</h1>
+        <p className="text-slate-600">Manage your availability and view bookings</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', marginBottom: '40px' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
         <div>
-          <h2>Create Time Slots</h2>
-          <form onSubmit={generateTimeSlots}>
-            <div className="form-group">
-              <label>Select Date</label>
+          <h2 className="text-2xl font-bold text-slate-800 mb-4">Create Time Slots</h2>
+          <form onSubmit={generateTimeSlots} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Select Date
+              </label>
               <input 
                 type="date" 
                 value={newSlots.date}
                 onChange={(e) => setNewSlots({...newSlots, date: e.target.value})}
                 required
                 min={new Date().toISOString().split('T')[0]}
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
             </div>
             
-            <div className="form-row">
-              <div className="form-group">
-                <label>Start Time</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Start Time
+                </label>
                 <input 
                   type="time" 
                   value={newSlots.startTime}
                   onChange={(e) => setNewSlots({...newSlots, startTime: e.target.value})}
                   required
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
               </div>
               
-              <div className="form-group">
-                <label>End Time</label>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  End Time
+                </label>
                 <input 
                   type="time" 
                   value={newSlots.endTime}
                   onChange={(e) => setNewSlots({...newSlots, endTime: e.target.value})}
                   required
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
               </div>
             </div>
             
-            <div className="form-group">
-              <label>Time Slot Duration</label>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Time Slot Duration
+              </label>
               <select 
                 value={newSlots.slotDuration}
                 onChange={(e) => setNewSlots({...newSlots, slotDuration: e.target.value})}
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               >
                 <option value="15">15 minutes</option>
                 <option value="30">30 minutes</option>
@@ -172,47 +185,58 @@ function Dashboard({ onLogout, onBackToBooking }) {
               </select>
             </div>
             
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+            <button 
+              type="submit" 
+              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
+            >
+              <Plus className="w-5 h-5" />
               Generate Time Slots
             </button>
           </form>
 
-          <div style={{ 
-            marginTop: '20px', 
-            padding: '16px', 
-            background: '#F0F9FF', 
-            borderRadius: '10px',
-            fontSize: '14px',
-            color: '#475569'
-          }}>
-            <strong>💡 Tip:</strong> Select a date, set your working hours, and choose how long each appointment should be. We'll automatically create all the slots for that day.
+          <div className="mt-5 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg text-sm text-slate-700">
+            <strong className="block text-slate-900 mb-1">💡 Tip:</strong>
+            Select a date, set your working hours, and choose how long each appointment should be. We'll automatically create all the slots for that day.
           </div>
         </div>
 
         <div>
-          <h2>Current Bookings ({bookings.length})</h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-4">
+            Current Bookings 
+            <span className="ml-2 text-blue-600">({bookings.length})</span>
+          </h2>
           {bookings.length === 0 ? (
-            <div className="empty-state">
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
-              <p>No bookings yet</p>
+            <div className="text-center py-16">
+              <div className="text-5xl mb-3">📭</div>
+              <p className="text-slate-600">No bookings yet</p>
             </div>
           ) : (
-            <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+            <div className="space-y-3 max-h-[500px] overflow-y-auto">
               {bookings.map(booking => (
-                <div key={booking.id} className="booking-info">
-                  <div style={{ marginBottom: '12px' }}>
-                    <strong style={{ fontSize: '16px' }}>{booking.clientName}</strong>
+                <div key={booking.id} className="bg-blue-50 border-l-4 border-blue-500 p-5 rounded-lg shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <User className="w-5 h-5 text-blue-600" />
+                    <strong className="text-lg text-slate-900">{booking.clientName}</strong>
                   </div>
-                  <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px', lineHeight: '1.6' }}>
-                    📧 {booking.clientEmail}<br />
-                    📞 {booking.clientPhone}<br />
-                    🕐 {formatDateTime(booking.date, booking.time)}
+                  <div className="space-y-1.5 text-sm text-slate-600 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4" />
+                      {booking.clientEmail}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4" />
+                      {booking.clientPhone}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      {formatDateTime(booking.date, booking.time)}
+                    </div>
                   </div>
                   <button 
-                    className="btn btn-danger"
-                    style={{ fontSize: '14px', padding: '8px 16px' }}
                     onClick={() => cancelBooking(booking.id)}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-all"
                   >
+                    <Trash2 className="w-4 h-4" />
                     Cancel Booking
                   </button>
                 </div>
@@ -222,28 +246,24 @@ function Dashboard({ onLogout, onBackToBooking }) {
         </div>
       </div>
 
-      <div className="section-header">
-        <h2>All Time Slots ({availability.length} total)</h2>
+      <div className="border-b-2 border-slate-100 pb-4 mb-6">
+        <h2 className="text-2xl font-bold text-slate-800">
+          All Time Slots
+          <span className="ml-2 text-slate-500 font-normal">({availability.length} total)</span>
+        </h2>
       </div>
       
       {Object.keys(slotsByDate).length === 0 ? (
-        <div className="empty-state">
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📅</div>
-          <p>No time slots created yet</p>
-          <p style={{ fontSize: '14px', marginTop: '8px' }}>Use the form above to generate your availability</p>
+        <div className="text-center py-16">
+          <div className="text-5xl mb-3">📅</div>
+          <p className="text-slate-800 font-medium mb-1">No time slots created yet</p>
+          <p className="text-sm text-slate-600">Use the form above to generate your availability</p>
         </div>
       ) : (
-        <div>
+        <div className="space-y-8">
           {Object.keys(slotsByDate).sort().map(date => (
-            <div key={date} style={{ marginBottom: '32px' }}>
-              <h3 style={{ 
-                color: '#334155', 
-                fontSize: '18px', 
-                fontWeight: '600',
-                marginBottom: '16px',
-                paddingBottom: '8px',
-                borderBottom: '2px solid #F1F5F9'
-              }}>
+            <div key={date}>
+              <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-100">
                 {new Date(date).toLocaleDateString('en-US', { 
                   weekday: 'long', 
                   year: 'numeric', 
@@ -251,46 +271,33 @@ function Dashboard({ onLogout, onBackToBooking }) {
                   day: 'numeric' 
                 })}
               </h3>
-              <div className="grid">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {slotsByDate[date].sort((a, b) => a.time.localeCompare(b.time)).map(slot => (
-                  <div key={slot.id} className="card">
-                    <div style={{ marginBottom: '12px' }}>
-                      <strong style={{ fontSize: '18px', color: '#0F172A' }}>
-                        {slot.time}
-                      </strong>
+                  <div key={slot.id} className="bg-white border-2 border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="w-5 h-5 text-blue-500" />
+                      <strong className="text-xl text-slate-900">{slot.time}</strong>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
+                    <div className="text-sm text-slate-600 mb-3">
                       Duration: {slot.duration} min
                     </div>
-                    <div style={{ fontSize: '14px', marginBottom: '16px' }}>
+                    <div className="mb-3">
                       {slot.available ? (
-                        <span style={{ 
-                          color: '#16A34A', 
-                          background: '#F0FDF4', 
-                          padding: '4px 12px', 
-                          borderRadius: '6px',
-                          fontWeight: '600'
-                        }}>
+                        <span className="inline-block px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-semibold">
                           ✓ Available
                         </span>
                       ) : (
-                        <span style={{ 
-                          color: '#DC2626', 
-                          background: '#FEF2F2', 
-                          padding: '4px 12px', 
-                          borderRadius: '6px',
-                          fontWeight: '600'
-                        }}>
+                        <span className="inline-block px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-semibold">
                           ● Booked
                         </span>
                       )}
                     </div>
                     {slot.available && (
                       <button 
-                        className="btn btn-danger"
-                        style={{ fontSize: '14px', padding: '8px 16px', width: '100%' }}
                         onClick={() => removeSlot(slot.id)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-all"
                       >
+                        <Trash2 className="w-4 h-4" />
                         Remove
                       </button>
                     )}
