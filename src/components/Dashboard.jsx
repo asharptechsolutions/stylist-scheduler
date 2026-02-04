@@ -3,8 +3,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
+import ServiceManager from './ServiceManager'
 
 function Dashboard({ user }) {
   const { slug } = useParams()
@@ -17,6 +18,7 @@ function Dashboard({ user }) {
 
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
+  const [activeTab, setActiveTab] = useState('schedule')
   const [selectedDate, setSelectedDate] = useState(null)
   const [newSlots, setNewSlots] = useState({
     date: '',
@@ -231,6 +233,36 @@ function Dashboard({ user }) {
         <p className="text-slate-600">Manage your availability and view bookings</p>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 mb-8 bg-slate-100 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => setActiveTab('schedule')}
+          className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+            activeTab === 'schedule'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Schedule
+        </button>
+        <button
+          onClick={() => setActiveTab('services')}
+          className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center gap-2 ${
+            activeTab === 'services'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Tag className="w-4 h-4" />
+          Services
+        </button>
+      </div>
+
+      {/* Services Tab */}
+      {activeTab === 'services' && <ServiceManager shopId={shopId} />}
+
+      {/* Schedule Tab */}
+      {activeTab === 'schedule' && <>
       {/* Calendar Overview */}
       <div className="mb-10">
         <h2 className="text-2xl font-bold text-slate-800 mb-4">Monthly Overview</h2>
@@ -360,6 +392,17 @@ function Dashboard({ user }) {
                     <strong className="text-lg text-slate-900">{booking.clientName}</strong>
                   </div>
                   <div className="space-y-1.5 text-sm text-slate-600 mb-3">
+                    {booking.serviceName && (
+                      <div className="flex items-center gap-2">
+                        <Tag className="w-4 h-4 text-blue-500" />
+                        <span className="font-semibold text-slate-800">{booking.serviceName}</span>
+                        {booking.servicePrice != null && (
+                          <span className="text-blue-600 font-semibold">
+                            ${Number(booking.servicePrice).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <Mail className="w-4 h-4" />
                       {booking.clientEmail}
@@ -458,6 +501,7 @@ function Dashboard({ user }) {
           ))}
         </div>
       )}
+      </>}
     </div>
   )
 }
