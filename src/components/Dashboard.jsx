@@ -3,10 +3,11 @@ import { useState, useEffect } from 'react'
 function Dashboard({ onLogout, onBackToBooking }) {
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
-  const [newSlot, setNewSlot] = useState({
+  const [newSlots, setNewSlots] = useState({
     date: '',
-    time: '',
-    duration: '60'
+    startTime: '09:00',
+    endTime: '17:00',
+    slotDuration: '60'
   })
 
   useEffect(() => {
@@ -20,21 +21,45 @@ function Dashboard({ onLogout, onBackToBooking }) {
     setBookings(storedBookings)
   }
 
-  const addTimeSlot = (e) => {
+  const generateTimeSlots = (e) => {
     e.preventDefault()
-    const slot = {
-      id: Date.now(),
-      date: newSlot.date,
-      time: newSlot.time,
-      duration: parseInt(newSlot.duration),
-      available: true
+    
+    const { date, startTime, endTime, slotDuration } = newSlots
+    const duration = parseInt(slotDuration)
+    
+    // Convert times to minutes
+    const [startHour, startMin] = startTime.split(':').map(Number)
+    const [endHour, endMin] = endTime.split(':').map(Number)
+    
+    const startMinutes = startHour * 60 + startMin
+    const endMinutes = endHour * 60 + endMin
+    
+    // Generate all slots
+    const generatedSlots = []
+    let currentMinutes = startMinutes
+    
+    while (currentMinutes + duration <= endMinutes) {
+      const hours = Math.floor(currentMinutes / 60)
+      const mins = currentMinutes % 60
+      const timeString = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
+      
+      generatedSlots.push({
+        id: Date.now() + currentMinutes, // Unique ID
+        date: date,
+        time: timeString,
+        duration: duration,
+        available: true
+      })
+      
+      currentMinutes += duration
     }
     
-    const updated = [...availability, slot]
+    const updated = [...availability, ...generatedSlots]
     setAvailability(updated)
     localStorage.setItem('availability', JSON.stringify(updated))
     
-    setNewSlot({ date: '', time: '', duration: '60' })
+    // Reset form
+    setNewSlots({ date: '', startTime: '09:00', endTime: '17:00', slotDuration: '60' })
   }
 
   const removeSlot = (id) => {
@@ -70,81 +95,122 @@ function Dashboard({ onLogout, onBackToBooking }) {
     })
   }
 
+  // Group slots by date for better visualization
+  const slotsByDate = availability.reduce((acc, slot) => {
+    if (!acc[slot.date]) acc[slot.date] = []
+    acc[slot.date].push(slot)
+    return acc
+  }, {})
+
   return (
     <div className="container">
       <div className="nav">
         <button className="btn btn-secondary" onClick={onBackToBooking}>
-          View Booking Page
+          ← Booking Page
         </button>
         <button className="btn btn-danger" onClick={onLogout}>
           Logout
         </button>
       </div>
 
-      <h1>📅 Owner Dashboard</h1>
-      <p style={{ color: '#64748b', marginBottom: '30px' }}>Manage your availability and bookings</p>
+      <div className="section-header">
+        <h1>📅 Dashboard</h1>
+        <p style={{ color: '#64748b', fontSize: '15px', marginTop: '8px' }}>
+          Manage your availability and view bookings
+        </p>
+      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '30px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', marginBottom: '40px' }}>
         <div>
-          <h2>Add Available Time Slot</h2>
-          <form onSubmit={addTimeSlot}>
+          <h2>Create Time Slots</h2>
+          <form onSubmit={generateTimeSlots}>
             <div className="form-group">
-              <label>Date</label>
+              <label>Select Date</label>
               <input 
                 type="date" 
-                value={newSlot.date}
-                onChange={(e) => setNewSlot({...newSlot, date: e.target.value})}
+                value={newSlots.date}
+                onChange={(e) => setNewSlots({...newSlots, date: e.target.value})}
                 required
                 min={new Date().toISOString().split('T')[0]}
               />
             </div>
             
-            <div className="form-group">
-              <label>Time</label>
-              <input 
-                type="time" 
-                value={newSlot.time}
-                onChange={(e) => setNewSlot({...newSlot, time: e.target.value})}
-                required
-              />
+            <div className="form-row">
+              <div className="form-group">
+                <label>Start Time</label>
+                <input 
+                  type="time" 
+                  value={newSlots.startTime}
+                  onChange={(e) => setNewSlots({...newSlots, startTime: e.target.value})}
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>End Time</label>
+                <input 
+                  type="time" 
+                  value={newSlots.endTime}
+                  onChange={(e) => setNewSlots({...newSlots, endTime: e.target.value})}
+                  required
+                />
+              </div>
             </div>
             
             <div className="form-group">
-              <label>Duration (minutes)</label>
+              <label>Time Slot Duration</label>
               <select 
-                value={newSlot.duration}
-                onChange={(e) => setNewSlot({...newSlot, duration: e.target.value})}
+                value={newSlots.slotDuration}
+                onChange={(e) => setNewSlots({...newSlots, slotDuration: e.target.value})}
               >
+                <option value="15">15 minutes</option>
                 <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
                 <option value="60">1 hour</option>
                 <option value="90">1.5 hours</option>
                 <option value="120">2 hours</option>
               </select>
             </div>
             
-            <button type="submit" className="btn btn-primary">Add Time Slot</button>
+            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+              Generate Time Slots
+            </button>
           </form>
+
+          <div style={{ 
+            marginTop: '20px', 
+            padding: '16px', 
+            background: '#F0F9FF', 
+            borderRadius: '10px',
+            fontSize: '14px',
+            color: '#475569'
+          }}>
+            <strong>💡 Tip:</strong> Select a date, set your working hours, and choose how long each appointment should be. We'll automatically create all the slots for that day.
+          </div>
         </div>
 
         <div>
           <h2>Current Bookings ({bookings.length})</h2>
           {bookings.length === 0 ? (
-            <div className="empty-state">No bookings yet</div>
+            <div className="empty-state">
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
+              <p>No bookings yet</p>
+            </div>
           ) : (
-            <div>
+            <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
               {bookings.map(booking => (
                 <div key={booking.id} className="booking-info">
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong>{booking.clientName}</strong>
+                  <div style={{ marginBottom: '12px' }}>
+                    <strong style={{ fontSize: '16px' }}>{booking.clientName}</strong>
                   </div>
-                  <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px', lineHeight: '1.6' }}>
                     📧 {booking.clientEmail}<br />
                     📞 {booking.clientPhone}<br />
                     🕐 {formatDateTime(booking.date, booking.time)}
                   </div>
                   <button 
                     className="btn btn-danger"
-                    style={{ fontSize: '14px', padding: '6px 12px' }}
+                    style={{ fontSize: '14px', padding: '8px 16px' }}
                     onClick={() => cancelBooking(booking.id)}
                   >
                     Cancel Booking
@@ -156,35 +222,85 @@ function Dashboard({ onLogout, onBackToBooking }) {
         </div>
       </div>
 
-      <h2>All Time Slots ({availability.length})</h2>
-      <div className="grid">
-        {availability.length === 0 ? (
-          <div className="empty-state">No time slots created yet</div>
-        ) : (
-          availability.map(slot => (
-            <div key={slot.id} className={`card ${slot.available ? 'available' : 'booked'}`}>
-              <div style={{ marginBottom: '10px' }}>
-                <strong>{formatDateTime(slot.date, slot.time)}</strong>
-              </div>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
-                Duration: {slot.duration} min
-              </div>
-              <div style={{ fontSize: '14px', marginBottom: '10px' }}>
-                Status: {slot.available ? '✅ Available' : '🔴 Booked'}
-              </div>
-              {slot.available && (
-                <button 
-                  className="btn btn-danger"
-                  style={{ fontSize: '14px', padding: '6px 12px', width: '100%' }}
-                  onClick={() => removeSlot(slot.id)}
-                >
-                  Remove Slot
-                </button>
-              )}
-            </div>
-          ))
-        )}
+      <div className="section-header">
+        <h2>All Time Slots ({availability.length} total)</h2>
       </div>
+      
+      {Object.keys(slotsByDate).length === 0 ? (
+        <div className="empty-state">
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📅</div>
+          <p>No time slots created yet</p>
+          <p style={{ fontSize: '14px', marginTop: '8px' }}>Use the form above to generate your availability</p>
+        </div>
+      ) : (
+        <div>
+          {Object.keys(slotsByDate).sort().map(date => (
+            <div key={date} style={{ marginBottom: '32px' }}>
+              <h3 style={{ 
+                color: '#334155', 
+                fontSize: '18px', 
+                fontWeight: '600',
+                marginBottom: '16px',
+                paddingBottom: '8px',
+                borderBottom: '2px solid #F1F5F9'
+              }}>
+                {new Date(date).toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </h3>
+              <div className="grid">
+                {slotsByDate[date].sort((a, b) => a.time.localeCompare(b.time)).map(slot => (
+                  <div key={slot.id} className="card">
+                    <div style={{ marginBottom: '12px' }}>
+                      <strong style={{ fontSize: '18px', color: '#0F172A' }}>
+                        {slot.time}
+                      </strong>
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
+                      Duration: {slot.duration} min
+                    </div>
+                    <div style={{ fontSize: '14px', marginBottom: '16px' }}>
+                      {slot.available ? (
+                        <span style={{ 
+                          color: '#16A34A', 
+                          background: '#F0FDF4', 
+                          padding: '4px 12px', 
+                          borderRadius: '6px',
+                          fontWeight: '600'
+                        }}>
+                          ✓ Available
+                        </span>
+                      ) : (
+                        <span style={{ 
+                          color: '#DC2626', 
+                          background: '#FEF2F2', 
+                          padding: '4px 12px', 
+                          borderRadius: '6px',
+                          fontWeight: '600'
+                        }}>
+                          ● Booked
+                        </span>
+                      )}
+                    </div>
+                    {slot.available && (
+                      <button 
+                        className="btn btn-danger"
+                        style={{ fontSize: '14px', padding: '8px 16px', width: '100%' }}
+                        onClick={() => removeSlot(slot.id)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

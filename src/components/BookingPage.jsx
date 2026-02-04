@@ -84,22 +84,26 @@ function BookingPage({ onOwnerClick }) {
 
   return (
     <div className="container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <div>
           <h1>💇‍♀️ Book Your Appointment</h1>
-          <p style={{ color: '#64748b' }}>Choose an available time slot</p>
+          <p style={{ color: '#64748b', fontSize: '15px', marginTop: '8px' }}>
+            Choose an available time slot
+          </p>
         </div>
         <button className="btn btn-secondary" onClick={onOwnerClick}>
-          Owner Login
+          🔐 Owner Login
         </button>
       </div>
 
       {showBookingForm ? (
-        <div style={{ maxWidth: '500px', margin: '0 auto' }}>
+        <div style={{ maxWidth: '540px', margin: '0 auto' }}>
           <h2>Complete Your Booking</h2>
-          <div className="booking-info" style={{ marginBottom: '20px' }}>
-            <strong>{formatDateTime(selectedSlot.date, selectedSlot.time)}</strong>
-            <div style={{ fontSize: '14px', color: '#64748b', marginTop: '5px' }}>
+          <div className="booking-info" style={{ marginBottom: '24px' }}>
+            <strong style={{ fontSize: '16px', display: 'block', marginBottom: '8px' }}>
+              {formatDateTime(selectedSlot.date, selectedSlot.time)}
+            </strong>
+            <div style={{ fontSize: '14px', color: '#64748b' }}>
               Duration: {selectedSlot.duration} minutes
             </div>
           </div>
@@ -159,13 +163,17 @@ function BookingPage({ onOwnerClick }) {
         <>
           {availableSlots.length === 0 ? (
             <div className="empty-state">
-              <div style={{ fontSize: '48px', marginBottom: '10px' }}>📅</div>
-              <h3>No available slots at the moment</h3>
-              <p>Check back soon for new availability!</p>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📅</div>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>
+                No available slots at the moment
+              </h3>
+              <p style={{ fontSize: '15px' }}>Check back soon for new availability!</p>
             </div>
           ) : (
             <>
-              <h2>Available Time Slots ({availableSlots.length})</h2>
+              <div className="section-header">
+                <h2>Available Time Slots ({availableSlots.length})</h2>
+              </div>
               <div className="grid">
                 {availableSlots.map(slot => (
                   <div 
@@ -173,14 +181,16 @@ function BookingPage({ onOwnerClick }) {
                     className="card time-slot available"
                     onClick={() => handleBookSlot(slot)}
                   >
-                    <div style={{ marginBottom: '10px' }}>
-                      <strong>{formatDateTime(slot.date, slot.time)}</strong>
+                    <div style={{ marginBottom: '12px' }}>
+                      <strong style={{ fontSize: '16px', color: '#0F172A' }}>
+                        {formatDateTime(slot.date, slot.time)}
+                      </strong>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
                       Duration: {slot.duration} minutes
                     </div>
-                    <button className="btn btn-primary" style={{ width: '100%', fontSize: '14px' }}>
-                      Book This Slot
+                    <button className="btn btn-primary" style={{ width: '100%' }}>
+                      Book This Slot →
                     </button>
                   </div>
                 ))}

@@ -15,8 +15,8 @@ function Login({ onLogin, onBack }) {
 
   return (
     <div className="auth-form container">
-      <h1 style={{ textAlign: 'center', marginBottom: '10px' }}>🔐 Owner Login</h1>
-      <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '30px' }}>
+      <h1 style={{ textAlign: 'center', marginBottom: '12px' }}>🔐 Owner Login</h1>
+      <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '32px', fontSize: '15px' }}>
         Enter your password to access the dashboard
       </p>
 
@@ -51,8 +51,15 @@ function Login({ onLogin, onBack }) {
         </div>
       </form>
 
-      <div style={{ marginTop: '30px', padding: '15px', background: '#f0f9ff', borderRadius: '8px', fontSize: '14px' }}>
-        <strong>Demo Password:</strong> admin123
+      <div style={{ 
+        marginTop: '32px', 
+        padding: '16px', 
+        background: '#F0F9FF', 
+        borderRadius: '10px', 
+        fontSize: '14px',
+        color: '#475569'
+      }}>
+        <strong style={{ color: '#0F172A' }}>💡 Demo Password:</strong> admin123
       </div>
     </div>
   )
