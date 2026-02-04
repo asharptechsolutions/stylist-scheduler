@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users } from 'lucide-react'
 import Calendar from './Calendar'
 
 function BookingPage() {
@@ -13,7 +13,9 @@ function BookingPage() {
   const [notFound, setNotFound] = useState(false)
 
   const [services, setServices] = useState([])
+  const [staffMembers, setStaffMembers] = useState([])
   const [selectedService, setSelectedService] = useState(null)
+  const [selectedStaff, setSelectedStaff] = useState(null) // null, 'any', or staff object
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
   const [showBookingForm, setShowBookingForm] = useState(false)
@@ -89,33 +91,73 @@ function BookingPage() {
       }
     )
 
+    const unsubStaff = onSnapshot(
+      collection(db, 'shops', shopId, 'staff'),
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((s) => s.active !== false)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        setStaffMembers(items)
+      }
+    )
+
     return () => {
       unsubServices()
       unsubAvailability()
       unsubBookings()
+      unsubStaff()
     }
   }, [shopId])
 
-  // Determine if shop has services
+  // Auto-select staff when only 1 exists
+  useEffect(() => {
+    if (staffMembers.length === 1) {
+      setSelectedStaff(staffMembers[0])
+    } else if (staffMembers.length === 0) {
+      setSelectedStaff(null)
+    }
+  }, [staffMembers])
+
+  // Determine flow flags
   const hasServices = services.length > 0
+  const hasStaff = staffMembers.length > 0
+  const showStaffStep = staffMembers.length > 1
 
-  // Filter slots that can accommodate the selected service duration
+  // Filter slots by service duration and selected staff
   const getCompatibleSlots = () => {
-    if (!selectedService) return availability.filter((s) => s.available)
+    let slots = availability.filter((s) => s.available)
 
-    const serviceDuration = selectedService.duration
+    // Filter by service duration
+    if (selectedService) {
+      slots = slots.filter((slot) => slot.duration >= selectedService.duration)
+    }
 
-    return availability.filter((slot) => {
-      if (!slot.available) return false
-      // Slot must be at least as long as the service duration
-      return slot.duration >= serviceDuration
-    })
+    // Filter by staff
+    if (selectedStaff && selectedStaff !== 'any') {
+      slots = slots.filter((slot) => slot.staffId === selectedStaff.id || !slot.staffId)
+    }
+    // 'any' or null: show all available slots
+
+    return slots
   }
 
   const compatibleSlots = getCompatibleSlots()
 
   const handleSelectService = (service) => {
     setSelectedService(service)
+    // Reset staff only if multiple staff (auto-selected stays for single staff)
+    if (staffMembers.length > 1) {
+      setSelectedStaff(null)
+    }
+    setSelectedDate(null)
+    setSelectedSlot(null)
+    setShowBookingForm(false)
+    setConfirmationMessage('')
+  }
+
+  const handleSelectStaff = (staffMember) => {
+    setSelectedStaff(staffMember) // staff object or 'any'
     setSelectedDate(null)
     setSelectedSlot(null)
     setShowBookingForm(false)
@@ -124,9 +166,30 @@ function BookingPage() {
 
   const handleBackToServices = () => {
     setSelectedService(null)
+    if (staffMembers.length > 1) {
+      setSelectedStaff(null)
+    }
     setSelectedDate(null)
     setSelectedSlot(null)
     setShowBookingForm(false)
+  }
+
+  const handleBackToStaff = () => {
+    setSelectedStaff(null)
+    setSelectedDate(null)
+    setSelectedSlot(null)
+    setShowBookingForm(false)
+  }
+
+  const handleBackFromCalendar = () => {
+    setSelectedDate(null)
+    setSelectedSlot(null)
+    setShowBookingForm(false)
+    if (showStaffStep) {
+      setSelectedStaff(null)
+    } else if (hasServices) {
+      setSelectedService(null)
+    }
   }
 
   const handleBookSlot = (slot) => {
@@ -151,12 +214,22 @@ function BookingPage() {
         bookedAt: new Date().toISOString(),
       }
 
-      // Include service info if a service was selected
+      // Include service info
       if (selectedService) {
         bookingData.serviceId = selectedService.id
         bookingData.serviceName = selectedService.name
         bookingData.servicePrice = selectedService.price
         bookingData.serviceDuration = selectedService.duration
+      }
+
+      // Include staff info
+      if (selectedStaff && selectedStaff !== 'any') {
+        bookingData.staffId = selectedStaff.id
+        bookingData.staffName = selectedStaff.name
+      } else if (selectedSlot.staffId) {
+        // "Any available" or no staff step, but slot has a staff assignment
+        bookingData.staffId = selectedSlot.staffId
+        bookingData.staffName = selectedSlot.staffName || ''
       }
 
       await addDoc(collection(db, 'shops', shopId, 'bookings'), bookingData)
@@ -170,6 +243,7 @@ function BookingPage() {
       setSelectedSlot(null)
       setSelectedService(null)
       setSelectedDate(null)
+      setSelectedStaff(staffMembers.length === 1 ? staffMembers[0] : null)
       setConfirmationMessage('✅ Booking confirmed! You will receive a confirmation email shortly.')
     } catch (err) {
       console.error('Booking error:', err)
@@ -247,11 +321,21 @@ function BookingPage() {
   // Determine current step
   const getStep = () => {
     if (showBookingForm) return 'form'
-    if (!hasServices || selectedService) return 'calendar'
-    return 'services'
+    if (hasServices && !selectedService) return 'services'
+    if (showStaffStep && !selectedStaff) return 'staff'
+    return 'calendar'
   }
 
   const step = getStep()
+
+  // Build dynamic step indicators
+  const steps = []
+  if (hasServices) steps.push({ key: 'services', label: 'Service' })
+  if (showStaffStep) steps.push({ key: 'staff', label: 'Staff' })
+  steps.push({ key: 'calendar', label: 'Date & Time' })
+  steps.push({ key: 'form', label: 'Book' })
+
+  const currentStepIndex = steps.findIndex((s) => s.key === step)
 
   return (
     <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10">
@@ -262,6 +346,7 @@ function BookingPage() {
           </h1>
           <p className="text-slate-600 text-base">
             {step === 'services' && 'Choose a service to get started'}
+            {step === 'staff' && 'Choose your preferred stylist'}
             {step === 'calendar' && 'Pick a date and time for your appointment'}
             {step === 'form' && 'Complete your booking details'}
           </p>
@@ -275,39 +360,29 @@ function BookingPage() {
         </Link>
       </div>
 
-      {/* Step indicators when services exist */}
-      {hasServices && (
-        <div className="flex items-center gap-3 mb-8">
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-            step === 'services'
-              ? 'bg-blue-100 text-blue-700 border border-blue-200'
-              : selectedService
-                ? 'bg-green-50 text-green-700 border border-green-200'
-                : 'bg-slate-100 text-slate-400 border border-slate-200'
-          }`}>
-            <span className="w-6 h-6 rounded-full bg-current/10 flex items-center justify-center text-xs font-bold">1</span>
-            Service
-          </div>
-          <div className="w-6 h-px bg-slate-300" />
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-            step === 'calendar'
-              ? 'bg-blue-100 text-blue-700 border border-blue-200'
-              : step === 'form'
-                ? 'bg-green-50 text-green-700 border border-green-200'
-                : 'bg-slate-100 text-slate-400 border border-slate-200'
-          }`}>
-            <span className="w-6 h-6 rounded-full bg-current/10 flex items-center justify-center text-xs font-bold">2</span>
-            Date & Time
-          </div>
-          <div className="w-6 h-px bg-slate-300" />
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-            step === 'form'
-              ? 'bg-blue-100 text-blue-700 border border-blue-200'
-              : 'bg-slate-100 text-slate-400 border border-slate-200'
-          }`}>
-            <span className="w-6 h-6 rounded-full bg-current/10 flex items-center justify-center text-xs font-bold">3</span>
-            Book
-          </div>
+      {/* Step indicators */}
+      {steps.length > 1 && (
+        <div className="flex items-center gap-3 mb-8 flex-wrap">
+          {steps.map((s, i) => {
+            const isActive = s.key === step
+            const isCompleted = i < currentStepIndex
+
+            return (
+              <Fragment key={s.key}>
+                {i > 0 && <div className="w-6 h-px bg-slate-300" />}
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  isActive
+                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                    : isCompleted
+                      ? 'bg-green-50 text-green-700 border border-green-200'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200'
+                }`}>
+                  <span className="w-6 h-6 rounded-full bg-current/10 flex items-center justify-center text-xs font-bold">{i + 1}</span>
+                  {s.label}
+                </div>
+              </Fragment>
+            )
+          })}
         </div>
       )}
 
@@ -322,7 +397,7 @@ function BookingPage() {
         </div>
       )}
 
-      {/* ─── Step 1: Service Selection ─── */}
+      {/* ─── Step: Service Selection ─── */}
       {step === 'services' && (
         <>
           <div className="border-b-2 border-slate-100 pb-4 mb-6">
@@ -361,12 +436,12 @@ function BookingPage() {
         </>
       )}
 
-      {/* ─── Step 2: Calendar / Slot Selection ─── */}
-      {step === 'calendar' && (
+      {/* ─── Step: Staff Selection ─── */}
+      {step === 'staff' && (
         <>
           {/* Back button + selected service summary */}
           {hasServices && selectedService && (
-            <div className="flex items-center gap-4 mb-6">
+            <div className="flex items-center gap-4 mb-6 flex-wrap">
               <button
                 onClick={handleBackToServices}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200 text-sm"
@@ -380,6 +455,99 @@ function BookingPage() {
                 <span className="text-blue-600 font-bold">{formatPrice(selectedService.price)}</span>
                 <span className="text-slate-400 text-sm">· {formatDuration(selectedService.duration)}</span>
               </div>
+            </div>
+          )}
+
+          <div className="border-b-2 border-slate-100 pb-4 mb-6">
+            <h2 className="text-2xl font-bold text-slate-800">Choose Your Stylist</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {/* "Any Available" card */}
+            <button
+              onClick={() => handleSelectStaff('any')}
+              className="group text-left bg-white border-2 border-slate-200 hover:border-blue-500 rounded-2xl p-6 transition-all hover:shadow-xl hover:shadow-blue-500/10 hover:-translate-y-1"
+            >
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Users className="w-6 h-6 text-slate-500" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
+                    Any Available
+                  </h3>
+                  <p className="text-sm text-slate-500">First available staff member</p>
+                </div>
+              </div>
+              <div className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 group-hover:from-blue-600 group-hover:to-blue-700 text-white rounded-xl font-semibold text-sm text-center transition-all shadow-md shadow-blue-500/20 group-hover:shadow-lg group-hover:shadow-blue-500/30">
+                Select →
+              </div>
+            </button>
+
+            {/* Staff member cards */}
+            {staffMembers.map((member) => (
+              <button
+                key={member.id}
+                onClick={() => handleSelectStaff(member)}
+                className="group text-left bg-white border-2 border-slate-200 hover:border-blue-500 rounded-2xl p-6 transition-all hover:shadow-xl hover:shadow-blue-500/10 hover:-translate-y-1"
+              >
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Users className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
+                      {member.name}
+                    </h3>
+                    {member.role && (
+                      <p className="text-sm text-slate-500">{member.role}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 group-hover:from-blue-600 group-hover:to-blue-700 text-white rounded-xl font-semibold text-sm text-center transition-all shadow-md shadow-blue-500/20 group-hover:shadow-lg group-hover:shadow-blue-500/30">
+                  Select →
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ─── Step: Calendar / Slot Selection ─── */}
+      {step === 'calendar' && (
+        <>
+          {/* Back button + selected service/staff summary */}
+          {(hasServices || showStaffStep) && (
+            <div className="flex items-center gap-4 mb-6 flex-wrap">
+              <button
+                onClick={handleBackFromCalendar}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200 text-sm"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                {showStaffStep ? 'Back to Staff' : 'Back to Services'}
+              </button>
+              {selectedService && (
+                <div className="flex items-center gap-3 px-5 py-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <Tag className="w-4 h-4 text-blue-500" />
+                  <span className="font-semibold text-slate-800">{selectedService.name}</span>
+                  <span className="text-blue-600 font-bold">{formatPrice(selectedService.price)}</span>
+                  <span className="text-slate-400 text-sm">· {formatDuration(selectedService.duration)}</span>
+                </div>
+              )}
+              {selectedStaff && selectedStaff !== 'any' && (
+                <div className="flex items-center gap-3 px-5 py-3 bg-purple-50 border border-purple-200 rounded-xl">
+                  <Users className="w-4 h-4 text-purple-500" />
+                  <span className="font-semibold text-slate-800">{selectedStaff.name}</span>
+                  {selectedStaff.role && (
+                    <span className="text-slate-400 text-sm">· {selectedStaff.role}</span>
+                  )}
+                </div>
+              )}
+              {selectedStaff === 'any' && (
+                <div className="flex items-center gap-3 px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl">
+                  <Users className="w-4 h-4 text-slate-500" />
+                  <span className="font-semibold text-slate-800">Any Available</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -428,18 +596,24 @@ function BookingPage() {
                             onClick={() => handleBookSlot(slot)}
                             className="group bg-white border-2 border-slate-200 hover:border-blue-500 rounded-xl p-5 transition-all hover:shadow-lg hover:shadow-blue-500/10 hover:-translate-y-1"
                           >
-                            <div className="flex items-baseline justify-center gap-2 mb-3">
+                            <div className="flex items-baseline justify-center gap-2 mb-2">
                               <Clock className="w-5 h-5 text-blue-500 flex-shrink-0" />
                               <span className="text-2xl font-bold text-slate-900">
                                 {formatTime(slot.time)}
                               </span>
                             </div>
-                            <div className="text-sm text-slate-600 mb-4">
+                            {slot.staffName && selectedStaff === 'any' && (
+                              <div className="text-sm text-purple-600 mb-1 text-center flex items-center justify-center gap-1">
+                                <Users className="w-3.5 h-3.5" />
+                                {slot.staffName}
+                              </div>
+                            )}
+                            <div className="text-sm text-slate-600 mb-4 text-center">
                               {selectedService
                                 ? formatDuration(selectedService.duration)
                                 : `${slot.duration} minutes`}
                             </div>
-                            <div className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 group-hover:from-blue-600 group-hover:to-blue-700 text-white rounded-lg font-medium text-sm transition-all">
+                            <div className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 group-hover:from-blue-600 group-hover:to-blue-700 text-white rounded-lg font-medium text-sm transition-all text-center">
                               Book Now →
                             </div>
                           </button>
@@ -459,7 +633,7 @@ function BookingPage() {
         </>
       )}
 
-      {/* ─── Step 3: Booking Form ─── */}
+      {/* ─── Step: Booking Form ─── */}
       {step === 'form' && (
         <div className="max-w-xl mx-auto">
           <h2 className="text-2xl font-bold text-slate-800 mb-6">Complete Your Booking</h2>
@@ -473,6 +647,21 @@ function BookingPage() {
                 <span className="text-blue-600 font-bold text-lg ml-auto">
                   {formatPrice(selectedService.price)}
                 </span>
+              </div>
+            )}
+            {selectedStaff && selectedStaff !== 'any' && (
+              <div className="flex items-center gap-3 mb-3 pb-3 border-b border-blue-200">
+                <Users className="w-5 h-5 text-purple-600" />
+                <strong className="text-lg text-slate-900">{selectedStaff.name}</strong>
+                {selectedStaff.role && (
+                  <span className="text-slate-500 text-sm">{selectedStaff.role}</span>
+                )}
+              </div>
+            )}
+            {selectedStaff === 'any' && selectedSlot?.staffName && (
+              <div className="flex items-center gap-3 mb-3 pb-3 border-b border-blue-200">
+                <Users className="w-5 h-5 text-purple-600" />
+                <strong className="text-lg text-slate-900">{selectedSlot.staffName}</strong>
               </div>
             )}
             <div className="flex items-center gap-3 mb-2">

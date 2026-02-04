@@ -3,9 +3,10 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
+import StaffManager from './StaffManager'
 
 function Dashboard({ user }) {
   const { slug } = useParams()
@@ -18,13 +19,16 @@ function Dashboard({ user }) {
 
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
+  const [staff, setStaff] = useState([])
   const [activeTab, setActiveTab] = useState('schedule')
   const [selectedDate, setSelectedDate] = useState(null)
+  const [staffFilter, setStaffFilter] = useState('all')
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
     endTime: '17:00',
-    slotDuration: '60'
+    slotDuration: '60',
+    staffId: ''
   })
 
   // Check auth & ownership
@@ -88,9 +92,21 @@ function Dashboard({ user }) {
       }
     )
 
+    const unsubStaff = onSnapshot(
+      collection(db, 'shops', shopId, 'staff'),
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((s) => s.active !== false)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        setStaff(items)
+      }
+    )
+
     return () => {
       unsubAvailability()
       unsubBookings()
+      unsubStaff()
     }
   }, [shopId])
 
@@ -102,7 +118,7 @@ function Dashboard({ user }) {
   const generateTimeSlots = async (e) => {
     e.preventDefault()
     
-    const { date, startTime, endTime, slotDuration } = newSlots
+    const { date, startTime, endTime, slotDuration, staffId } = newSlots
     const duration = parseInt(slotDuration)
     
     const [startHour, startMin] = startTime.split(':').map(Number)
@@ -118,17 +134,25 @@ function Dashboard({ user }) {
       const mins = currentMinutes % 60
       const timeString = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
       
-      await addDoc(collection(db, 'shops', shopId, 'availability'), {
+      const slotData = {
         date: date,
         time: timeString,
         duration: duration,
         available: true
-      })
+      }
+
+      if (staffId) {
+        const selectedStaffMember = staff.find(s => s.id === staffId)
+        slotData.staffId = staffId
+        slotData.staffName = selectedStaffMember?.name || ''
+      }
+
+      await addDoc(collection(db, 'shops', shopId, 'availability'), slotData)
       
       currentMinutes += duration
     }
     
-    setNewSlots({ date: '', startTime: '09:00', endTime: '17:00', slotDuration: '60' })
+    setNewSlots({ date: '', startTime: '09:00', endTime: '17:00', slotDuration: '60', staffId: '' })
   }
 
   const removeSlot = async (id) => {
@@ -189,13 +213,22 @@ function Dashboard({ user }) {
     )
   }
 
-  const slotsByDate = availability.reduce((acc, slot) => {
+  // Filter availability and bookings by staff filter
+  const filteredAvailability = staffFilter === 'all'
+    ? availability
+    : availability.filter(s => s.staffId === staffFilter)
+
+  const filteredBookingsList = staffFilter === 'all'
+    ? bookings
+    : bookings.filter(b => b.staffId === staffFilter)
+
+  const slotsByDate = filteredAvailability.reduce((acc, slot) => {
     if (!acc[slot.date]) acc[slot.date] = []
     acc[slot.date].push(slot)
     return acc
   }, {})
 
-  const bookingsByDate = bookings.reduce((acc, booking) => {
+  const bookingsByDate = filteredBookingsList.reduce((acc, booking) => {
     if (!acc[booking.date]) acc[booking.date] = []
     acc[booking.date].push(booking)
     return acc
@@ -206,8 +239,8 @@ function Dashboard({ user }) {
     : Object.keys(slotsByDate).sort()
 
   const filteredBookings = selectedDate
-    ? bookings.filter(b => b.date === selectedDate)
-    : bookings
+    ? filteredBookingsList.filter(b => b.date === selectedDate)
+    : filteredBookingsList
 
   return (
     <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10">
@@ -246,6 +279,17 @@ function Dashboard({ user }) {
           Schedule
         </button>
         <button
+          onClick={() => setActiveTab('staff')}
+          className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center gap-2 ${
+            activeTab === 'staff'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Staff
+        </button>
+        <button
           onClick={() => setActiveTab('services')}
           className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center gap-2 ${
             activeTab === 'services'
@@ -258,11 +302,36 @@ function Dashboard({ user }) {
         </button>
       </div>
 
+      {/* Staff Tab */}
+      {activeTab === 'staff' && <StaffManager shopId={shopId} />}
+
       {/* Services Tab */}
       {activeTab === 'services' && <ServiceManager shopId={shopId} />}
 
       {/* Schedule Tab */}
       {activeTab === 'schedule' && <>
+
+      {/* Staff Filter */}
+      {staff.length > 0 && (
+        <div className="mb-6">
+          <label className="block text-sm font-semibold text-slate-700 mb-2">
+            Filter by Staff
+          </label>
+          <select
+            value={staffFilter}
+            onChange={(e) => setStaffFilter(e.target.value)}
+            className="px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium"
+          >
+            <option value="all">All Staff</option>
+            {staff.map(member => (
+              <option key={member.id} value={member.id}>
+                {member.name}{member.role ? ` — ${member.role}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Calendar Overview */}
       <div className="mb-10">
         <h2 className="text-2xl font-bold text-slate-800 mb-4">Monthly Overview</h2>
@@ -298,6 +367,28 @@ function Dashboard({ user }) {
         <div>
           <h2 className="text-2xl font-bold text-slate-800 mb-4">Create Time Slots</h2>
           <form onSubmit={generateTimeSlots} className="space-y-5">
+            {/* Staff Member Selection */}
+            {staff.length > 0 && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Staff Member
+                </label>
+                <select
+                  value={newSlots.staffId}
+                  onChange={(e) => setNewSlots({...newSlots, staffId: e.target.value})}
+                  required
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                >
+                  <option value="">Select a staff member</option>
+                  {staff.map(member => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}{member.role ? ` — ${member.role}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Select Date
@@ -369,7 +460,9 @@ function Dashboard({ user }) {
 
           <div className="mt-5 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg text-sm text-slate-700">
             <strong className="block text-slate-900 mb-1">💡 Tip:</strong>
-            Select a date, set your working hours, and choose how long each appointment should be. We'll automatically create all the slots for that day.
+            {staff.length > 0
+              ? 'Select a staff member, pick a date, set working hours, and choose slot duration. Slots will be created for that staff member.'
+              : 'Select a date, set your working hours, and choose how long each appointment should be. We\'ll automatically create all the slots for that day.'}
           </div>
         </div>
 
@@ -401,6 +494,12 @@ function Dashboard({ user }) {
                             ${Number(booking.servicePrice).toFixed(2)}
                           </span>
                         )}
+                      </div>
+                    )}
+                    {booking.staffName && (
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-purple-500" />
+                        <span className="font-medium text-purple-700">{booking.staffName}</span>
                       </div>
                     )}
                     <div className="flex items-center gap-2">
@@ -436,7 +535,7 @@ function Dashboard({ user }) {
           <span className="ml-2 text-slate-500 font-normal">
             ({selectedDate
               ? (slotsByDate[selectedDate] || []).length
-              : availability.length
+              : filteredAvailability.length
             } {selectedDate ? 'for date' : 'total'})
           </span>
         </h2>
@@ -471,9 +570,15 @@ function Dashboard({ user }) {
                       <Clock className="w-5 h-5 text-blue-500" />
                       <strong className="text-xl text-slate-900">{slot.time}</strong>
                     </div>
-                    <div className="text-sm text-slate-600 mb-3">
+                    <div className="text-sm text-slate-600 mb-1">
                       Duration: {slot.duration} min
                     </div>
+                    {slot.staffName && (
+                      <div className="text-sm text-purple-600 mb-2 flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5" />
+                        {slot.staffName}
+                      </div>
+                    )}
                     <div className="mb-3">
                       {slot.available ? (
                         <span className="inline-block px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-semibold">
