@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { collection, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus } from 'lucide-react'
+import DashboardCalendar from './DashboardCalendar'
 
 function Dashboard({ onLogout, onBackToBooking }) {
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
+  const [selectedDate, setSelectedDate] = useState(null)
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
@@ -107,6 +109,21 @@ function Dashboard({ onLogout, onBackToBooking }) {
     return acc
   }, {})
 
+  const bookingsByDate = bookings.reduce((acc, booking) => {
+    if (!acc[booking.date]) acc[booking.date] = []
+    acc[booking.date].push(booking)
+    return acc
+  }, {})
+
+  // Filter slots and bookings by selected date if one is chosen
+  const filteredSlotDates = selectedDate
+    ? Object.keys(slotsByDate).filter(d => d === selectedDate).sort()
+    : Object.keys(slotsByDate).sort()
+
+  const filteredBookings = selectedDate
+    ? bookings.filter(b => b.date === selectedDate)
+    : bookings
+
   return (
     <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10">
       <div className="flex gap-3 mb-8">
@@ -129,6 +146,37 @@ function Dashboard({ onLogout, onBackToBooking }) {
       <div className="border-b-2 border-slate-100 pb-4 mb-8">
         <h1 className="text-4xl font-bold text-slate-900 mb-2 tracking-tight">Dashboard</h1>
         <p className="text-slate-600">Manage your availability and view bookings</p>
+      </div>
+
+      {/* Calendar Overview */}
+      <div className="mb-10">
+        <h2 className="text-2xl font-bold text-slate-800 mb-4">Monthly Overview</h2>
+        <DashboardCalendar
+          slotsByDate={slotsByDate}
+          bookingsByDate={bookingsByDate}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+        />
+        {selectedDate && (
+          <div className="mt-3 flex items-center gap-3">
+            <span className="text-sm text-slate-600">
+              Showing: <strong className="text-slate-900">
+                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric'
+                })}
+              </strong>
+            </span>
+            <button
+              onClick={() => setSelectedDate(null)}
+              className="text-sm px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-all border border-slate-200"
+            >
+              Show All
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
@@ -212,17 +260,17 @@ function Dashboard({ onLogout, onBackToBooking }) {
 
         <div>
           <h2 className="text-2xl font-bold text-slate-800 mb-4">
-            Current Bookings 
-            <span className="ml-2 text-blue-600">({bookings.length})</span>
+            {selectedDate ? 'Bookings for Date' : 'Current Bookings'}
+            <span className="ml-2 text-blue-600">({filteredBookings.length})</span>
           </h2>
-          {bookings.length === 0 ? (
+          {filteredBookings.length === 0 ? (
             <div className="text-center py-16">
               <div className="text-5xl mb-3">📭</div>
-              <p className="text-slate-600">No bookings yet</p>
+              <p className="text-slate-600">{selectedDate ? 'No bookings for this date' : 'No bookings yet'}</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {bookings.map(booking => (
+              {filteredBookings.map(booking => (
                 <div key={booking.id} className="bg-blue-50 border-l-4 border-blue-500 p-5 rounded-lg shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <User className="w-5 h-5 text-blue-600" />
@@ -258,20 +306,29 @@ function Dashboard({ onLogout, onBackToBooking }) {
 
       <div className="border-b-2 border-slate-100 pb-4 mb-6">
         <h2 className="text-2xl font-bold text-slate-800">
-          All Time Slots
-          <span className="ml-2 text-slate-500 font-normal">({availability.length} total)</span>
+          {selectedDate ? 'Time Slots' : 'All Time Slots'}
+          <span className="ml-2 text-slate-500 font-normal">
+            ({selectedDate
+              ? (slotsByDate[selectedDate] || []).length
+              : availability.length
+            } {selectedDate ? 'for date' : 'total'})
+          </span>
         </h2>
       </div>
       
-      {Object.keys(slotsByDate).length === 0 ? (
+      {filteredSlotDates.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-3">📅</div>
-          <p className="text-slate-800 font-medium mb-1">No time slots created yet</p>
-          <p className="text-sm text-slate-600">Use the form above to generate your availability</p>
+          <p className="text-slate-800 font-medium mb-1">
+            {selectedDate ? 'No time slots for this date' : 'No time slots created yet'}
+          </p>
+          <p className="text-sm text-slate-600">
+            {selectedDate ? 'Select another date or create slots' : 'Use the form above to generate your availability'}
+          </p>
         </div>
       ) : (
         <div className="space-y-8">
-          {Object.keys(slotsByDate).sort().map(date => (
+          {filteredSlotDates.map(date => (
             <div key={date}>
               <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-100">
                 {new Date(date).toLocaleDateString('en-US', { 
