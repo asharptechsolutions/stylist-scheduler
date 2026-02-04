@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import Calendar from './Calendar'
 
 function BookingPage({ onOwnerClick }) {
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
   const [showBookingForm, setShowBookingForm] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(null)
   const [clientInfo, setClientInfo] = useState({
     name: '',
     email: '',
@@ -83,7 +85,17 @@ function BookingPage({ onOwnerClick }) {
     return `${displayHour}:${minutes} ${ampm}`
   }
 
-  const availableSlots = availability.filter(slot => slot.available)
+  // Get unique dates that have available slots
+  const availableDates = [...new Set(
+    availability
+      .filter(slot => slot.available)
+      .map(slot => slot.date)
+  )].sort()
+
+  // Filter slots by selected date
+  const availableSlots = selectedDate
+    ? availability.filter(slot => slot.available && slot.date === selectedDate)
+    : availability.filter(slot => slot.available)
 
   return (
     <div className="container">
@@ -164,7 +176,7 @@ function BookingPage({ onOwnerClick }) {
         </div>
       ) : (
         <>
-          {availableSlots.length === 0 ? (
+          {availableDates.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontSize: '64px', marginBottom: '16px' }}>📅</div>
               <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>
@@ -174,35 +186,62 @@ function BookingPage({ onOwnerClick }) {
             </div>
           ) : (
             <>
-              <div className="section-header">
-                <h2>Available Time Slots ({availableSlots.length})</h2>
+              <div style={{ marginBottom: '32px' }}>
+                <h2 style={{ marginBottom: '16px' }}>Select a Date</h2>
+                <Calendar 
+                  availableDates={availableDates}
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                />
               </div>
-              <div className="grid">
-                {availableSlots.map(slot => (
-                  <div 
-                    key={slot.id} 
-                    className="card time-slot available"
-                    onClick={() => handleBookSlot(slot)}
-                  >
-                    <div style={{ marginBottom: '8px' }}>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>
-                        {formatDate(slot.date)}
-                      </div>
-                    </div>
-                    <div style={{ marginBottom: '12px' }}>
-                      <strong style={{ fontSize: '20px', color: '#0F172A' }}>
-                        {formatTime(slot.time)}
-                      </strong>
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-                      {slot.duration}min
-                    </div>
-                    <button className="btn btn-primary" style={{ width: '100%' }}>
-                      Book →
-                    </button>
+
+              {selectedDate && (
+                <>
+                  <div className="section-header">
+                    <h2>
+                      Available Times for {formatDate(selectedDate)} ({availableSlots.length})
+                    </h2>
                   </div>
-                ))}
-              </div>
+                  {availableSlots.length === 0 ? (
+                    <div className="empty-state">
+                      <p style={{ fontSize: '15px' }}>No slots available for this date</p>
+                    </div>
+                  ) : (
+                    <div className="grid">
+                      {availableSlots.map(slot => (
+                        <div 
+                          key={slot.id} 
+                          className="card time-slot available"
+                          onClick={() => handleBookSlot(slot)}
+                        >
+                          <div style={{ marginBottom: '12px' }}>
+                            <strong style={{ fontSize: '24px', color: '#0F172A' }}>
+                              {formatTime(slot.time)}
+                            </strong>
+                          </div>
+                          <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                            {slot.duration}min
+                          </div>
+                          <button className="btn btn-primary" style={{ width: '100%' }}>
+                            Book →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!selectedDate && (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: '40px', 
+                  color: '#64748b',
+                  fontSize: '15px'
+                }}>
+                  👆 Select a date from the calendar above to see available time slots
+                </div>
+              )}
             </>
           )}
         </>
