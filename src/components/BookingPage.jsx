@@ -70,14 +70,17 @@ function BookingPage({ onOwnerClick }) {
     alert('✅ Booking confirmed! You will receive a confirmation email shortly.')
   }
 
-  const formatDateTime = (date, time) => {
-    return new Date(`${date}T${time}`).toLocaleString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    })
+  const formatDate = (dateString) => {
+    const date = new Date(dateString)
+    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear().toString().slice(-2)}`
+  }
+
+  const formatTime = (timeString) => {
+    const [hours, minutes] = timeString.split(':')
+    const hour = parseInt(hours)
+    const ampm = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour % 12 || 12
+    return `${displayHour}:${minutes} ${ampm}`
   }
 
   const availableSlots = availability.filter(slot => slot.available)
@@ -101,10 +104,10 @@ function BookingPage({ onOwnerClick }) {
           <h2>Complete Your Booking</h2>
           <div className="booking-info" style={{ marginBottom: '24px' }}>
             <strong style={{ fontSize: '16px', display: 'block', marginBottom: '8px' }}>
-              {formatDateTime(selectedSlot.date, selectedSlot.time)}
+              {formatDate(selectedSlot.date)} at {formatTime(selectedSlot.time)}
             </strong>
             <div style={{ fontSize: '14px', color: '#64748b' }}>
-              Duration: {selectedSlot.duration} minutes
+              {selectedSlot.duration}min
             </div>
           </div>
 
@@ -181,16 +184,21 @@ function BookingPage({ onOwnerClick }) {
                     className="card time-slot available"
                     onClick={() => handleBookSlot(slot)}
                   >
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ fontSize: '14px', color: '#64748b' }}>
+                        {formatDate(slot.date)}
+                      </div>
+                    </div>
                     <div style={{ marginBottom: '12px' }}>
-                      <strong style={{ fontSize: '16px', color: '#0F172A' }}>
-                        {formatDateTime(slot.date, slot.time)}
+                      <strong style={{ fontSize: '20px', color: '#0F172A' }}>
+                        {formatTime(slot.time)}
                       </strong>
                     </div>
                     <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-                      Duration: {slot.duration} minutes
+                      {slot.duration}min
                     </div>
                     <button className="btn btn-primary" style={{ width: '100%' }}>
-                      Book This Slot →
+                      Book →
                     </button>
                   </div>
                 ))}
