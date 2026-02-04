@@ -1,16 +1,42 @@
 import { useState } from 'react'
-import { Lock, ArrowLeft, Lightbulb } from 'lucide-react'
+import { signInWithEmailAndPassword } from 'firebase/auth'
+import { auth } from '../firebase'
+import { Lock, ArrowLeft } from 'lucide-react'
 
-function Login({ onLogin, onBack }) {
+function Login({ onLoginSuccess, onBack }) {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    const success = onLogin(password)
-    if (!success) {
-      setError('Invalid password')
+    setError('')
+    setLoading(true)
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password)
+      onLoginSuccess()
+    } catch (err) {
+      // Map Firebase error codes to friendly messages
+      switch (err.code) {
+        case 'auth/invalid-credential':
+        case 'auth/wrong-password':
+        case 'auth/user-not-found':
+          setError('Invalid email or password')
+          break
+        case 'auth/invalid-email':
+          setError('Please enter a valid email address')
+          break
+        case 'auth/too-many-requests':
+          setError('Too many failed attempts. Please try again later.')
+          break
+        default:
+          setError('Login failed. Please try again.')
+      }
       setPassword('')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -22,10 +48,28 @@ function Login({ onLogin, onBack }) {
             <Lock className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Owner Login</h1>
-          <p className="text-slate-600">Enter your password to access the dashboard</p>
+          <p className="text-slate-600">Enter your credentials to access the dashboard</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              Email
+            </label>
+            <input 
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                setError('')
+              }}
+              placeholder="you@example.com"
+              required
+              autoFocus
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">
               Password
@@ -39,7 +83,6 @@ function Login({ onLogin, onBack }) {
               }}
               placeholder="Enter password"
               required
-              autoFocus
               className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-all ${
                 error 
                   ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
@@ -55,10 +98,11 @@ function Login({ onLogin, onBack }) {
 
           <div className="flex gap-3">
             <button 
-              type="submit" 
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
+              type="submit"
+              disabled={loading}
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Login
+              {loading ? 'Signing in…' : 'Login'}
             </button>
             <button 
               type="button" 
@@ -71,16 +115,10 @@ function Login({ onLogin, onBack }) {
           </div>
         </form>
 
-        <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
-          <div className="flex items-start gap-2">
-            <Lightbulb className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm">
-              <strong className="text-slate-900 block mb-1">Demo Password:</strong>
-              <code className="px-2 py-1 bg-white border border-blue-200 rounded text-blue-600 font-mono">
-                admin123
-              </code>
-            </div>
-          </div>
+        <div className="mt-6 p-4 bg-slate-50 border-l-4 border-slate-300 rounded-lg">
+          <p className="text-sm text-slate-600">
+            🔒 <strong>Owner access only.</strong> If you need an account, contact the site administrator.
+          </p>
         </div>
       </div>
     </div>

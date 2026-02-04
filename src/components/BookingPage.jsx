@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Calendar as CalendarIcon, Clock, Lock } from 'lucide-react'
+import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
+import { db } from '../firebase'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle } from 'lucide-react'
 import Calendar from './Calendar'
 
 function BookingPage({ onOwnerClick }) {
@@ -8,65 +10,82 @@ function BookingPage({ onOwnerClick }) {
   const [showBookingForm, setShowBookingForm] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [selectedDate, setSelectedDate] = useState(null)
+  const [confirmationMessage, setConfirmationMessage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const [clientInfo, setClientInfo] = useState({
     name: '',
     email: '',
     phone: ''
   })
 
+  // Real-time listener for availability
   useEffect(() => {
-    loadData()
-  }, [])
+    const unsubAvailability = onSnapshot(
+      collection(db, 'availability'),
+      (snapshot) => {
+        const now = new Date()
+        const slots = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((slot) => {
+            const slotDate = new Date(`${slot.date}T${slot.time}`)
+            return slotDate > now
+          })
+        setAvailability(slots)
+      }
+    )
 
-  const loadData = () => {
-    const storedAvailability = JSON.parse(localStorage.getItem('availability') || '[]')
-    const storedBookings = JSON.parse(localStorage.getItem('bookings') || '[]')
-    
-    const now = new Date()
-    const futureSlots = storedAvailability.filter(slot => {
-      const slotDate = new Date(`${slot.date}T${slot.time}`)
-      return slotDate > now
-    })
-    
-    setAvailability(futureSlots)
-    setBookings(storedBookings)
-  }
+    const unsubBookings = onSnapshot(
+      collection(db, 'bookings'),
+      (snapshot) => {
+        const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+        setBookings(items)
+      }
+    )
+
+    return () => {
+      unsubAvailability()
+      unsubBookings()
+    }
+  }, [])
 
   const handleBookSlot = (slot) => {
     setSelectedSlot(slot)
     setShowBookingForm(true)
+    setConfirmationMessage('')
   }
 
-  const confirmBooking = (e) => {
+  const confirmBooking = async (e) => {
     e.preventDefault()
-    
-    const booking = {
-      id: Date.now(),
-      slotId: selectedSlot.id,
-      date: selectedSlot.date,
-      time: selectedSlot.time,
-      duration: selectedSlot.duration,
-      clientName: clientInfo.name,
-      clientEmail: clientInfo.email,
-      clientPhone: clientInfo.phone,
-      bookedAt: new Date().toISOString()
+    setSubmitting(true)
+
+    try {
+      // Create the booking document
+      await addDoc(collection(db, 'bookings'), {
+        slotId: selectedSlot.id,
+        date: selectedSlot.date,
+        time: selectedSlot.time,
+        duration: selectedSlot.duration,
+        clientName: clientInfo.name,
+        clientEmail: clientInfo.email,
+        clientPhone: clientInfo.phone,
+        bookedAt: new Date().toISOString()
+      })
+
+      // Mark the slot as unavailable
+      await updateDoc(doc(db, 'availability', selectedSlot.id), {
+        available: false
+      })
+
+      setClientInfo({ name: '', email: '', phone: '' })
+      setShowBookingForm(false)
+      setSelectedSlot(null)
+      setConfirmationMessage('✅ Booking confirmed! You will receive a confirmation email shortly.')
+    } catch (err) {
+      console.error('Booking error:', err)
+      setConfirmationMessage('❌ Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
-    
-    const updatedBookings = [...bookings, booking]
-    setBookings(updatedBookings)
-    localStorage.setItem('bookings', JSON.stringify(updatedBookings))
-    
-    const updatedAvailability = availability.map(slot =>
-      slot.id === selectedSlot.id ? { ...slot, available: false } : slot
-    )
-    setAvailability(updatedAvailability)
-    localStorage.setItem('availability', JSON.stringify(updatedAvailability))
-    
-    setClientInfo({ name: '', email: '', phone: '' })
-    setShowBookingForm(false)
-    setSelectedSlot(null)
-    
-    alert('✅ Booking confirmed! You will receive a confirmation email shortly.')
   }
 
   const formatDate = (dateString) => {
@@ -111,6 +130,18 @@ function BookingPage({ onOwnerClick }) {
           Owner Login
         </button>
       </div>
+
+      {/* Inline confirmation / error message */}
+      {confirmationMessage && (
+        <div className={`mb-6 p-5 rounded-xl flex items-center gap-3 ${
+          confirmationMessage.startsWith('✅')
+            ? 'bg-green-50 border border-green-200 text-green-800'
+            : 'bg-red-50 border border-red-200 text-red-800'
+        }`}>
+          {confirmationMessage.startsWith('✅') && <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />}
+          <span className="font-medium">{confirmationMessage}</span>
+        </div>
+      )}
 
       {showBookingForm ? (
         <div className="max-w-xl mx-auto">
@@ -173,10 +204,11 @@ function BookingPage({ onOwnerClick }) {
 
             <div className="flex gap-3 pt-2">
               <button 
-                type="submit" 
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
+                type="submit"
+                disabled={submitting}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Confirm Booking
+                {submitting ? 'Booking…' : 'Confirm Booking'}
               </button>
               <button 
                 type="button" 

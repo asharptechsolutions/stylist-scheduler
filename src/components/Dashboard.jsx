@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { collection, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { db } from '../firebase'
 import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus } from 'lucide-react'
 
 function Dashboard({ onLogout, onBackToBooking }) {
@@ -11,18 +13,31 @@ function Dashboard({ onLogout, onBackToBooking }) {
     slotDuration: '60'
   })
 
+  // Real-time listeners for both collections
   useEffect(() => {
-    loadData()
+    const unsubAvailability = onSnapshot(
+      collection(db, 'availability'),
+      (snapshot) => {
+        const slots = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+        setAvailability(slots)
+      }
+    )
+
+    const unsubBookings = onSnapshot(
+      collection(db, 'bookings'),
+      (snapshot) => {
+        const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+        setBookings(items)
+      }
+    )
+
+    return () => {
+      unsubAvailability()
+      unsubBookings()
+    }
   }, [])
 
-  const loadData = () => {
-    const storedAvailability = JSON.parse(localStorage.getItem('availability') || '[]')
-    const storedBookings = JSON.parse(localStorage.getItem('bookings') || '[]')
-    setAvailability(storedAvailability)
-    setBookings(storedBookings)
-  }
-
-  const generateTimeSlots = (e) => {
+  const generateTimeSlots = async (e) => {
     e.preventDefault()
     
     const { date, startTime, endTime, slotDuration } = newSlots
@@ -34,7 +49,6 @@ function Dashboard({ onLogout, onBackToBooking }) {
     const startMinutes = startHour * 60 + startMin
     const endMinutes = endHour * 60 + endMin
     
-    const generatedSlots = []
     let currentMinutes = startMinutes
     
     while (currentMinutes + duration <= endMinutes) {
@@ -42,8 +56,7 @@ function Dashboard({ onLogout, onBackToBooking }) {
       const mins = currentMinutes % 60
       const timeString = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
       
-      generatedSlots.push({
-        id: Date.now() + currentMinutes,
+      await addDoc(collection(db, 'availability'), {
         date: date,
         time: timeString,
         duration: duration,
@@ -53,31 +66,28 @@ function Dashboard({ onLogout, onBackToBooking }) {
       currentMinutes += duration
     }
     
-    const updated = [...availability, ...generatedSlots]
-    setAvailability(updated)
-    localStorage.setItem('availability', JSON.stringify(updated))
-    
     setNewSlots({ date: '', startTime: '09:00', endTime: '17:00', slotDuration: '60' })
   }
 
-  const removeSlot = (id) => {
-    const updated = availability.filter(slot => slot.id !== id)
-    setAvailability(updated)
-    localStorage.setItem('availability', JSON.stringify(updated))
+  const removeSlot = async (id) => {
+    await deleteDoc(doc(db, 'availability', id))
   }
 
-  const cancelBooking = (bookingId) => {
-    const updatedBookings = bookings.filter(b => b.id !== bookingId)
-    setBookings(updatedBookings)
-    localStorage.setItem('bookings', JSON.stringify(updatedBookings))
-    
+  const cancelBooking = async (bookingId) => {
     const booking = bookings.find(b => b.id === bookingId)
+
+    await deleteDoc(doc(db, 'bookings', bookingId))
+
     if (booking) {
-      const updatedAvailability = availability.map(slot => 
-        slot.id === booking.slotId ? { ...slot, available: true } : slot
-      )
-      setAvailability(updatedAvailability)
-      localStorage.setItem('availability', JSON.stringify(updatedAvailability))
+      // Re-open the slot
+      try {
+        await updateDoc(doc(db, 'availability', booking.slotId), {
+          available: true
+        })
+      } catch (err) {
+        // Slot may have been deleted already — that's fine
+        console.warn('Could not re-open slot:', err)
+      }
     }
   }
 
