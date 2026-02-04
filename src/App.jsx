@@ -22,8 +22,11 @@ function App() {
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-slate-400 text-lg">Loading…</div>
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <div className="spinner" />
+          <span className="text-sm font-medium text-slate-500">Loading…</span>
+        </div>
       </div>
     )
   }

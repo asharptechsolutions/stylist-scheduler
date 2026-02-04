@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -213,7 +213,7 @@ function Dashboard({ user }) {
     })
   }
 
-  // Compute which days of the week have recurring availability (for calendar indicator)
+  // Compute which days of the week have recurring availability
   const recurringDayFlags = useMemo(() => {
     const flags = {}
     const relevantStaff = staffFilter === 'all' ? staff : staff.filter((s) => s.id === staffFilter)
@@ -240,26 +240,56 @@ function Dashboard({ user }) {
     })
   }, [staff, staffFilter])
 
+  // ── Stats ──
+  const stats = useMemo(() => {
+    const today = new Date()
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+    // This week: Mon–Sun
+    const dayOfWeek = today.getDay()
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() + mondayOffset)
+    weekStart.setHours(0, 0, 0, 0)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekStart.getDate() + 6)
+    weekEnd.setHours(23, 59, 59, 999)
+
+    const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`
+    const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
+
+    const todayBookings = bookings.filter(b => b.date === todayStr).length
+    const weekBookings = bookings.filter(b => b.date >= weekStartStr && b.date <= weekEndStr).length
+    const uniqueClients = new Set(bookings.map(b => b.clientEmail?.toLowerCase()).filter(Boolean)).size
+
+    return { todayBookings, weekBookings, uniqueClients, totalBookings: bookings.length }
+  }, [bookings])
+
   if (shopLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-slate-400 text-lg">Loading…</div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <div className="spinner" />
+          <span className="text-sm font-medium text-slate-500">Loading dashboard…</span>
+        </div>
       </div>
     )
   }
 
   if (unauthorized) {
     return (
-      <div className="max-w-md mx-auto mt-20">
-        <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10 text-center">
-          <div className="text-6xl mb-4">🔒</div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-3">Unauthorized</h1>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-5">
+        <div className="bg-white rounded-2xl p-10 shadow-lg border border-slate-200 text-center max-w-md w-full animate-scale-in">
+          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <Lock className="w-8 h-8 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Unauthorized</h1>
           <p className="text-slate-600 mb-6">
             You don't have access to this dashboard.
           </p>
           <Link
             to={`/shop/${slug}/login`}
-            className="inline-block px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 transition-all"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all"
           >
             Login
           </Link>
@@ -297,459 +327,516 @@ function Dashboard({ user }) {
     ? filteredBookingsList.filter(b => b.date === selectedDate)
     : filteredBookingsList
 
+  const tabs = [
+    { key: 'schedule', label: 'Schedule', icon: Calendar },
+    { key: 'staff', label: 'Staff', icon: Users },
+    { key: 'services', label: 'Services', icon: Tag },
+  ]
+
   return (
-    <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10">
-      <div className="flex gap-3 mb-8">
-        <Link
-          to={`/shop/${slug}`}
-          className="flex items-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
-        >
-          <Eye className="w-4 h-4" />
-          Booking Page
-        </Link>
-        <button 
-          onClick={handleLogout}
-          className="flex items-center gap-2 px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg shadow-red-500/30"
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
-        </button>
-      </div>
+    <div className="min-h-screen bg-slate-50">
+      {/* ─── Top Navigation ─── */}
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="h-16 flex items-center justify-between">
+            {/* Left: Shop name */}
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-violet-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-600/20">
+                {(shop.name || '')[0]?.toUpperCase() || 'S'}
+              </div>
+              <div className="hidden sm:block">
+                <h1 className="text-base font-bold text-slate-900 leading-tight">{shop.name}</h1>
+                <p className="text-xs text-slate-500">Dashboard</p>
+              </div>
+            </div>
 
-      <div className="border-b-2 border-slate-100 pb-4 mb-8">
-        <h1 className="text-4xl font-bold text-slate-900 mb-2 tracking-tight">{shop.name}</h1>
-        <p className="text-slate-600">Manage your availability and view bookings</p>
-      </div>
+            {/* Center: Tabs */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      activeTab === tab.key
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </button>
+                )
+              })}
+            </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-8 bg-slate-100 p-1 rounded-xl w-fit">
-        <button
-          onClick={() => setActiveTab('schedule')}
-          className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-            activeTab === 'schedule'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          Schedule
-        </button>
-        <button
-          onClick={() => setActiveTab('staff')}
-          className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center gap-2 ${
-            activeTab === 'staff'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          Staff
-        </button>
-        <button
-          onClick={() => setActiveTab('services')}
-          className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center gap-2 ${
-            activeTab === 'services'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Tag className="w-4 h-4" />
-          Services
-        </button>
-      </div>
-
-      {/* Staff Tab */}
-      {activeTab === 'staff' && <StaffManager shopId={shopId} />}
-
-      {/* Services Tab */}
-      {activeTab === 'services' && <ServiceManager shopId={shopId} />}
-
-      {/* Schedule Tab */}
-      {activeTab === 'schedule' && <>
-
-      {/* Settings Row: Staff Filter + Buffer Time */}
-      <div className="flex flex-wrap gap-6 mb-6">
-        {/* Staff Filter */}
-        {staff.length > 0 && (
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
-              Filter by Staff
-            </label>
-            <select
-              value={staffFilter}
-              onChange={(e) => setStaffFilter(e.target.value)}
-              className="px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium"
-            >
-              <option value="all">All Staff</option>
-              {staff.map(member => (
-                <option key={member.id} value={member.id}>
-                  {member.name}{member.role ? ` — ${member.role}` : ''}
-                </option>
-              ))}
-            </select>
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/shop/${slug}`}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all border border-transparent hover:border-slate-200"
+              >
+                <Eye className="w-4 h-4" />
+                <span className="hidden sm:inline">View Page</span>
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            </div>
           </div>
-        )}
-
-        {/* Buffer Time Setting */}
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">
-            Buffer Between Appointments
-          </label>
-          <select
-            value={shop?.bufferMinutes || 0}
-            onChange={(e) => updateBufferMinutes(e.target.value)}
-            className="px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium"
-          >
-            <option value="0">No buffer</option>
-            <option value="5">5 minutes</option>
-            <option value="10">10 minutes</option>
-            <option value="15">15 minutes</option>
-            <option value="30">30 minutes</option>
-          </select>
         </div>
-      </div>
+      </nav>
 
-      {/* Weekly Hours Summary */}
-      {staffWithHours.length > 0 && (
-        <div className="mb-8 bg-purple-50 border border-purple-200 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <RefreshCw className="w-5 h-5 text-purple-600" />
-            <h3 className="text-lg font-bold text-slate-900">Recurring Weekly Hours</h3>
-          </div>
-          <div className="space-y-3">
-            {staffWithHours.map((member) => {
-              const enabledDays = DAY_LABELS.filter(
-                (d) => member.weeklyHours[d.key]?.enabled
-              )
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* ─── Stats Cards ─── */}
+        {activeTab === 'schedule' && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 animate-fade-in">
+            {[
+              { label: "Today's Bookings", value: stats.todayBookings, icon: CalendarDays, color: 'bg-blue-100 text-blue-600' },
+              { label: 'This Week', value: stats.weekBookings, icon: TrendingUp, color: 'bg-violet-100 text-violet-600' },
+              { label: 'Total Bookings', value: stats.totalBookings, icon: BarChart3, color: 'bg-emerald-100 text-emerald-600' },
+              { label: 'Unique Clients', value: stats.uniqueClients, icon: Users, color: 'bg-amber-100 text-amber-600' },
+            ].map((stat) => {
+              const Icon = stat.icon
               return (
-                <div key={member.id} className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Users className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900 text-sm">{member.name}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {enabledDays.map((d) => {
-                        const cfg = member.weeklyHours[d.key]
-                        return (
-                          <span
-                            key={d.key}
-                            className="inline-block px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded text-xs font-medium"
-                          >
-                            {d.short} {formatTimeShort(cfg.start)}–{formatTimeShort(cfg.end)}
-                            {cfg.break && (
-                              <span className="text-amber-600 ml-1">
-                                (break {formatTimeShort(cfg.break.start)}–{formatTimeShort(cfg.break.end)})
-                              </span>
-                            )}
-                          </span>
-                        )
-                      })}
+                <div key={stat.label} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-all">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className={`w-10 h-10 ${stat.color} rounded-xl flex items-center justify-center`}>
+                      <Icon className="w-5 h-5" />
                     </div>
                   </div>
+                  <div className="text-2xl font-extrabold text-slate-900">{stat.value}</div>
+                  <div className="text-xs font-medium text-slate-500 mt-0.5">{stat.label}</div>
                 </div>
               )
             })}
           </div>
-          <p className="text-xs text-purple-500 mt-3">
-            Slots are auto-generated from these hours on the booking page. Manage hours in the Staff tab.
-          </p>
-        </div>
-      )}
+        )}
 
-      {/* Calendar Overview */}
-      <div className="mb-10">
-        <h2 className="text-2xl font-bold text-slate-800 mb-4">Monthly Overview</h2>
-        <DashboardCalendar
-          slotsByDate={slotsByDate}
-          bookingsByDate={bookingsByDate}
-          selectedDate={selectedDate}
-          onSelectDate={setSelectedDate}
-          recurringDayFlags={recurringDayFlags}
-        />
-        {selectedDate && (
-          <div className="mt-3 flex items-center gap-3">
-            <span className="text-sm text-slate-600">
-              Showing: <strong className="text-slate-900">
-                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric'
-                })}
-              </strong>
-            </span>
-            <button
-              onClick={() => setSelectedDate(null)}
-              className="text-sm px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-all border border-slate-200"
-            >
-              Show All
-            </button>
+        {/* Staff Tab */}
+        {activeTab === 'staff' && (
+          <div className="bg-white rounded-xl border border-slate-200 p-6 animate-fade-in">
+            <StaffManager shopId={shopId} />
           </div>
         )}
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-4">
-            {staffWithHours.length > 0 ? 'Add Custom Slots' : 'Create Time Slots'}
-          </h2>
-          {staffWithHours.length > 0 && (
-            <p className="text-sm text-slate-500 mb-4">
-              Recurring hours auto-generate slots. Use this form for one-off availability (e.g., a Saturday event).
-            </p>
-          )}
-          <form onSubmit={generateTimeSlots} className="space-y-5">
-            {/* Staff Member Selection */}
-            {staff.length > 0 && (
+        {/* Services Tab */}
+        {activeTab === 'services' && (
+          <div className="bg-white rounded-xl border border-slate-200 p-6 animate-fade-in">
+            <ServiceManager shopId={shopId} />
+          </div>
+        )}
+
+        {/* Schedule Tab */}
+        {activeTab === 'schedule' && (
+          <div className="animate-fade-in">
+            {/* Settings Row */}
+            <div className="flex flex-wrap gap-4 mb-6">
+              {staff.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Filter by Staff
+                  </label>
+                  <select
+                    value={staffFilter}
+                    onChange={(e) => setStaffFilter(e.target.value)}
+                    className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium"
+                  >
+                    <option value="all">All Staff</option>
+                    {staff.map(member => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}{member.role ? ` — ${member.role}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Staff Member
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Buffer Time
                 </label>
                 <select
-                  value={newSlots.staffId}
-                  onChange={(e) => setNewSlots({...newSlots, staffId: e.target.value})}
-                  required
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  value={shop?.bufferMinutes || 0}
+                  onChange={(e) => updateBufferMinutes(e.target.value)}
+                  className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium"
                 >
-                  <option value="">Select a staff member</option>
-                  {staff.map(member => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}{member.role ? ` — ${member.role}` : ''}
-                    </option>
-                  ))}
+                  <option value="0">No buffer</option>
+                  <option value="5">5 minutes</option>
+                  <option value="10">10 minutes</option>
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Weekly Hours Summary */}
+            {staffWithHours.length > 0 && (
+              <div className="mb-6 bg-violet-50 border border-violet-200 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <RefreshCw className="w-4 h-4 text-violet-600" />
+                  <h3 className="text-sm font-bold text-slate-900">Recurring Weekly Hours</h3>
+                </div>
+                <div className="space-y-2.5">
+                  {staffWithHours.map((member) => {
+                    const enabledDays = DAY_LABELS.filter(
+                      (d) => member.weeklyHours[d.key]?.enabled
+                    )
+                    return (
+                      <div key={member.id} className="flex items-start gap-2.5">
+                        <div className="w-7 h-7 bg-violet-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <Users className="w-3.5 h-3.5 text-violet-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">{member.name}</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {enabledDays.map((d) => {
+                              const cfg = member.weeklyHours[d.key]
+                              return (
+                                <span
+                                  key={d.key}
+                                  className="inline-block px-2 py-0.5 bg-white text-violet-700 border border-violet-200 rounded text-xs font-medium"
+                                >
+                                  {d.short} {formatTimeShort(cfg.start)}–{formatTimeShort(cfg.end)}
+                                  {cfg.break && (
+                                    <span className="text-amber-600 ml-1">
+                                      (break {formatTimeShort(cfg.break.start)}–{formatTimeShort(cfg.break.end)})
+                                    </span>
+                                  )}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-violet-500 mt-3">
+                  Slots auto-generate on the booking page. Manage hours in the Staff tab.
+                </p>
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Select Date
-              </label>
-              <input 
-                type="date" 
-                value={newSlots.date}
-                onChange={(e) => setNewSlots({...newSlots, date: e.target.value})}
-                required
-                min={new Date().toISOString().split('T')[0]}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            {/* Calendar Overview */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+              <h2 className="text-lg font-bold text-slate-900 mb-4">Monthly Overview</h2>
+              <DashboardCalendar
+                slotsByDate={slotsByDate}
+                bookingsByDate={bookingsByDate}
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+                recurringDayFlags={recurringDayFlags}
               />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Start Time
-                </label>
-                <input 
-                  type="time" 
-                  value={newSlots.startTime}
-                  onChange={(e) => setNewSlots({...newSlots, startTime: e.target.value})}
-                  required
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  End Time
-                </label>
-                <input 
-                  type="time" 
-                  value={newSlots.endTime}
-                  onChange={(e) => setNewSlots({...newSlots, endTime: e.target.value})}
-                  required
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Time Slot Duration
-              </label>
-              <select 
-                value={newSlots.slotDuration}
-                onChange={(e) => setNewSlots({...newSlots, slotDuration: e.target.value})}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-              >
-                <option value="15">15 minutes</option>
-                <option value="30">30 minutes</option>
-                <option value="45">45 minutes</option>
-                <option value="60">1 hour</option>
-                <option value="90">1.5 hours</option>
-                <option value="120">2 hours</option>
-              </select>
-            </div>
-            
-            <button 
-              type="submit" 
-              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
-            >
-              <Plus className="w-5 h-5" />
-              Generate Time Slots
-            </button>
-          </form>
-
-          <div className="mt-5 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg text-sm text-slate-700">
-            <strong className="block text-slate-900 mb-1">💡 Tip:</strong>
-            {staffWithHours.length > 0
-              ? 'Weekly hours are set — slots auto-generate on the booking page. Use this form only for one-off slots outside regular hours.'
-              : staff.length > 0
-                ? 'Select a staff member, pick a date, set working hours, and choose slot duration. Slots will be created for that staff member.'
-                : 'Select a date, set your working hours, and choose how long each appointment should be. We\'ll automatically create all the slots for that day.'}
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-4">
-            {selectedDate ? 'Bookings for Date' : 'Current Bookings'}
-            <span className="ml-2 text-blue-600">({filteredBookings.length})</span>
-          </h2>
-          {filteredBookings.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-3">📭</div>
-              <p className="text-slate-600">{selectedDate ? 'No bookings for this date' : 'No bookings yet'}</p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {filteredBookings.map(booking => (
-                <div key={booking.id} className="bg-blue-50 border-l-4 border-blue-500 p-5 rounded-lg shadow-sm">
-                  <div className="flex items-center gap-2 mb-3">
-                    <User className="w-5 h-5 text-blue-600" />
-                    <strong className="text-lg text-slate-900">{booking.clientName}</strong>
-                  </div>
-                  <div className="space-y-1.5 text-sm text-slate-600 mb-3">
-                    {booking.serviceName && (
-                      <div className="flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-blue-500" />
-                        <span className="font-semibold text-slate-800">{booking.serviceName}</span>
-                        {booking.servicePrice != null && (
-                          <span className="text-blue-600 font-semibold">
-                            ${Number(booking.servicePrice).toFixed(2)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {booking.staffName && (
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-purple-500" />
-                        <span className="font-medium text-purple-700">{booking.staffName}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4" />
-                      {booking.clientEmail}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4" />
-                      {booking.clientPhone}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      {formatDateTime(booking.date, booking.time)}
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => cancelBooking(booking.id)}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-all"
+              {selectedDate && (
+                <div className="mt-3 flex items-center gap-3">
+                  <span className="text-sm text-slate-600">
+                    Showing: <strong className="text-slate-900">
+                      {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </strong>
+                  </span>
+                  <button
+                    onClick={() => setSelectedDate(null)}
+                    className="text-xs px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-all border border-slate-200"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Cancel Booking
+                    Show All
                   </button>
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
-      </div>
 
-      <div className="border-b-2 border-slate-100 pb-4 mb-6">
-        <h2 className="text-2xl font-bold text-slate-800">
-          {selectedDate ? 'Custom Time Slots' : 'All Custom Time Slots'}
-          <span className="ml-2 text-slate-500 font-normal">
-            ({selectedDate
-              ? (slotsByDate[selectedDate] || []).length
-              : filteredAvailability.length
-            } {selectedDate ? 'for date' : 'total'})
-          </span>
-        </h2>
-        {staffWithHours.length > 0 && (
-          <p className="text-sm text-slate-500 mt-1">
-            Recurring slots from weekly hours are not shown here — they auto-generate on the booking page.
-          </p>
-        )}
-      </div>
-      
-      {filteredSlotDates.length === 0 ? (
-        <div className="text-center py-16">
-          <div className="text-5xl mb-3">📅</div>
-          <p className="text-slate-800 font-medium mb-1">
-            {selectedDate ? 'No custom time slots for this date' : 'No custom time slots created yet'}
-          </p>
-          <p className="text-sm text-slate-600">
-            {staffWithHours.length > 0
-              ? 'Recurring hours handle most scheduling. Add custom slots for special availability.'
-              : selectedDate
-                ? 'Select another date or create slots'
-                : 'Use the form above to generate your availability'}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {filteredSlotDates.map(date => (
-            <div key={date}>
-              <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-100">
-                {new Date(date).toLocaleDateString('en-US', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {slotsByDate[date].sort((a, b) => a.time.localeCompare(b.time)).map(slot => (
-                  <div key={slot.id} className="bg-white border-2 border-slate-200 rounded-xl p-5 shadow-sm">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-5 h-5 text-blue-500" />
-                      <strong className="text-xl text-slate-900">{slot.time}</strong>
-                    </div>
-                    <div className="text-sm text-slate-600 mb-1">
-                      Duration: {slot.duration} min
-                    </div>
-                    {slot.staffName && (
-                      <div className="text-sm text-purple-600 mb-2 flex items-center gap-1">
-                        <Users className="w-3.5 h-3.5" />
-                        {slot.staffName}
-                      </div>
-                    )}
-                    <div className="mb-3">
-                      {slot.available ? (
-                        <span className="inline-block px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-semibold">
-                          ✓ Available
-                        </span>
-                      ) : (
-                        <span className="inline-block px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-semibold">
-                          ● Booked
-                        </span>
-                      )}
-                    </div>
-                    {slot.available && (
-                      <button 
-                        onClick={() => removeSlot(slot.id)}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-all"
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Create Slots Form */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <h2 className="text-lg font-bold text-slate-900 mb-1">
+                  {staffWithHours.length > 0 ? 'Add Custom Slots' : 'Create Time Slots'}
+                </h2>
+                {staffWithHours.length > 0 && (
+                  <p className="text-xs text-slate-500 mb-4">
+                    Use this for one-off availability outside regular hours.
+                  </p>
+                )}
+                {!staffWithHours.length && <div className="mb-4" />}
+
+                <form onSubmit={generateTimeSlots} className="space-y-4">
+                  {staff.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Staff Member
+                      </label>
+                      <select
+                        value={newSlots.staffId}
+                        onChange={(e) => setNewSlots({...newSlots, staffId: e.target.value})}
+                        required
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
                       >
-                        <Trash2 className="w-4 h-4" />
-                        Remove
-                      </button>
-                    )}
+                        <option value="">Select a staff member</option>
+                        {staff.map(member => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}{member.role ? ` — ${member.role}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={newSlots.date}
+                      onChange={(e) => setNewSlots({...newSlots, date: e.target.value})}
+                      required
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                    />
                   </div>
-                ))}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Start
+                      </label>
+                      <input
+                        type="time"
+                        value={newSlots.startTime}
+                        onChange={(e) => setNewSlots({...newSlots, startTime: e.target.value})}
+                        required
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        End
+                      </label>
+                      <input
+                        type="time"
+                        value={newSlots.endTime}
+                        onChange={(e) => setNewSlots({...newSlots, endTime: e.target.value})}
+                        required
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                      Slot Duration
+                    </label>
+                    <select
+                      value={newSlots.slotDuration}
+                      onChange={(e) => setNewSlots({...newSlots, slotDuration: e.target.value})}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                    >
+                      <option value="15">15 minutes</option>
+                      <option value="30">30 minutes</option>
+                      <option value="45">45 minutes</option>
+                      <option value="60">1 hour</option>
+                      <option value="90">1.5 hours</option>
+                      <option value="120">2 hours</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/25 transition-all hover:-translate-y-0.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Generate Slots
+                  </button>
+                </form>
+
+                <div className="mt-4 p-3.5 bg-blue-50 border border-blue-100 rounded-xl text-xs text-slate-600 leading-relaxed">
+                  <strong className="text-slate-700">💡 Tip:</strong>{' '}
+                  {staffWithHours.length > 0
+                    ? 'Weekly hours auto-generate slots. Use this for one-off slots outside regular hours.'
+                    : staff.length > 0
+                      ? 'Select a staff member, pick a date, and set working hours to create slots.'
+                      : "Set your hours and slot duration. We'll create all the time slots for that day."}
+                </div>
+              </div>
+
+              {/* Bookings List */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {selectedDate ? 'Bookings' : 'All Bookings'}
+                  </h2>
+                  <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
+                    {filteredBookings.length}
+                  </span>
+                </div>
+                {filteredBookings.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                      <CalendarDays className="w-6 h-6 text-slate-400" />
+                    </div>
+                    <p className="text-sm text-slate-500 font-medium">
+                      {selectedDate ? 'No bookings for this date' : 'No bookings yet'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                    {filteredBookings
+                      .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))
+                      .map(booking => (
+                      <div key={booking.id} className="group border border-slate-200 rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                              <User className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-900 text-sm">{booking.clientName}</div>
+                              <div className="text-xs text-slate-500">
+                                {formatDateTime(booking.date, booking.time)}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => cancelBooking(booking.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            title="Cancel booking"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="ml-[46px] space-y-0.5 text-xs text-slate-500">
+                          {booking.serviceName && (
+                            <div className="flex items-center gap-1.5">
+                              <Tag className="w-3 h-3 text-blue-400" />
+                              <span className="font-medium text-slate-700">{booking.serviceName}</span>
+                              {booking.servicePrice != null && (
+                                <span className="text-blue-600 font-semibold">
+                                  ${Number(booking.servicePrice).toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {booking.staffName && (
+                            <div className="flex items-center gap-1.5">
+                              <Users className="w-3 h-3 text-violet-400" />
+                              <span className="text-violet-600">{booking.staffName}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <span className="flex items-center gap-1">
+                              <Mail className="w-3 h-3" />
+                              {booking.clientEmail}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Phone className="w-3 h-3" />
+                              {booking.clientPhone}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-          ))}
-        </div>
-      )}
-      </>}
+
+            {/* Custom Time Slots */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-lg font-bold text-slate-900">
+                  {selectedDate ? 'Custom Time Slots' : 'All Custom Time Slots'}
+                </h2>
+                <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+                  {selectedDate
+                    ? (slotsByDate[selectedDate] || []).length
+                    : filteredAvailability.length
+                  }
+                </span>
+              </div>
+              {staffWithHours.length > 0 && (
+                <p className="text-xs text-slate-500 mb-4">
+                  Recurring slots from weekly hours auto-generate — not shown here.
+                </p>
+              )}
+              {!staffWithHours.length && <div className="mb-4" />}
+
+              {filteredSlotDates.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <Calendar className="w-6 h-6 text-slate-400" />
+                  </div>
+                  <p className="text-sm text-slate-500 font-medium mb-1">
+                    {selectedDate ? 'No custom slots for this date' : 'No custom slots yet'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {staffWithHours.length > 0
+                      ? 'Recurring hours handle most scheduling.'
+                      : 'Use the form above to generate availability.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {filteredSlotDates.map(date => (
+                    <div key={date}>
+                      <h3 className="text-sm font-bold text-slate-700 mb-3 pb-2 border-b border-slate-100">
+                        {new Date(date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
+                        {slotsByDate[date].sort((a, b) => a.time.localeCompare(b.time)).map(slot => (
+                          <div key={slot.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-center group hover:border-slate-300 transition-all">
+                            <div className="text-sm font-bold text-slate-900 mb-0.5">{slot.time}</div>
+                            <div className="text-xs text-slate-500 mb-1">{slot.duration} min</div>
+                            {slot.staffName && (
+                              <div className="text-xs text-violet-600 mb-1.5 flex items-center justify-center gap-1">
+                                <Users className="w-3 h-3" />
+                                {slot.staffName}
+                              </div>
+                            )}
+                            <div className="mb-2">
+                              {slot.available ? (
+                                <span className="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-xs font-medium">
+                                  Available
+                                </span>
+                              ) : (
+                                <span className="inline-block px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-md text-xs font-medium">
+                                  Booked
+                                </span>
+                              )}
+                            </div>
+                            {slot.available && (
+                              <button
+                                onClick={() => removeSlot(slot.id)}
+                                className="opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1 w-full px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium transition-all border border-red-200"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

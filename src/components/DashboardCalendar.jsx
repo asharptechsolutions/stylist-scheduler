@@ -40,7 +40,6 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
 
   const handleDateClick = (day) => {
     const dateStr = getDateString(day)
-    // Toggle: click same date again to deselect
     if (dateStr === selectedDate) {
       onSelectDate(null)
     } else {
@@ -53,12 +52,11 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
 
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-  // Compute today at midnight for comparisons
   const todayDate = new Date()
   todayDate.setHours(0, 0, 0, 0)
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+    <div>
       <div className="flex justify-between items-center mb-5">
         <button
           onClick={previousMonth}
@@ -66,7 +64,7 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
         >
           <ChevronLeft className="w-5 h-5 text-slate-600" />
         </button>
-        <h3 className="text-lg font-bold text-slate-900">
+        <h3 className="text-base font-bold text-slate-900">
           {monthNames[month]} {year}
         </h3>
         <button
@@ -77,18 +75,18 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-2 mb-2">
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5">
         {dayNames.map(day => (
           <div
             key={day}
-            className="text-center text-xs font-semibold text-slate-500 py-2"
+            className="text-center text-xs font-semibold text-slate-400 py-2 uppercase tracking-wider"
           >
             {day}
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-7 gap-1.5">
         {Array.from({ length: startingDayOfWeek }).map((_, i) => (
           <div key={`empty-${i}`} />
         ))}
@@ -103,7 +101,6 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
                           today.getMonth() === month &&
                           today.getFullYear() === year
 
-          // Check for recurring hours on this day of the week
           const cellDate = new Date(year, month, day)
           const dayOfWeek = cellDate.getDay()
           const hasRecurring = recurringDayFlags[dayOfWeek] && cellDate >= todayDate
@@ -113,43 +110,46 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
               key={day}
               onClick={() => handleDateClick(day)}
               className={`
-                relative p-2 text-center rounded-lg text-sm font-semibold transition-all min-h-[60px] flex flex-col items-center justify-start
+                relative p-2 text-center rounded-lg text-sm font-semibold transition-all duration-200 min-h-[56px] flex flex-col items-center justify-start cursor-pointer
                 ${selected
-                  ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : hasData || hasRecurring
-                    ? 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 hover:scale-105 cursor-pointer'
+                    ? 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 hover:border-slate-300'
                     : isToday
-                      ? 'bg-slate-100 text-slate-900 border border-slate-300'
-                      : 'text-slate-400 hover:bg-slate-50 cursor-pointer'}
+                      ? 'text-slate-900 font-bold hover:bg-slate-50'
+                      : 'text-slate-400 hover:bg-slate-50'}
               `}
             >
-              <span className={`text-sm ${isToday && !selected ? 'underline decoration-2 underline-offset-2' : ''}`}>
+              <span className={`text-sm ${isToday && !selected ? 'relative' : ''}`}>
                 {day}
+                {isToday && !selected && (
+                  <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-500 rounded-full" />
+                )}
               </span>
               {(hasData || hasRecurring) && (
-                <div className="flex gap-1 mt-1 flex-wrap justify-center">
+                <div className="flex gap-0.5 mt-1 flex-wrap justify-center">
                   {hasRecurring && (
-                    <span className={`text-[10px] font-bold px-1 rounded ${
+                    <span className={`text-[9px] font-bold px-1 rounded ${
                       selected
-                        ? 'bg-white/25 text-white'
-                        : 'bg-purple-100 text-purple-700'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-violet-100 text-violet-700'
                     }`}>
                       R
                     </span>
                   )}
                   {availableCount > 0 && (
-                    <span className={`text-[10px] font-bold px-1 rounded ${
+                    <span className={`text-[9px] font-bold px-1 rounded ${
                       selected
-                        ? 'bg-white/25 text-white'
-                        : 'bg-green-100 text-green-700'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-emerald-100 text-emerald-700'
                     }`}>
                       {availableCount}
                     </span>
                   )}
                   {bookedCount > 0 && (
-                    <span className={`text-[10px] font-bold px-1 rounded ${
+                    <span className={`text-[9px] font-bold px-1 rounded ${
                       selected
-                        ? 'bg-white/25 text-white'
+                        ? 'bg-white/20 text-white'
                         : 'bg-blue-100 text-blue-700'
                     }`}>
                       {bookedCount}
@@ -162,26 +162,24 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
         })}
       </div>
 
-      <div className="mt-5 p-3 bg-slate-50 rounded-lg">
-        <div className="flex flex-wrap gap-4 text-xs text-slate-600">
-          {Object.keys(recurringDayFlags).length > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-purple-100 border border-purple-200 rounded flex items-center justify-center text-[8px] font-bold text-purple-700">R</div>
-              <span>Recurring hours</span>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
-            <span>Available slots</span>
+      <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+        {Object.keys(recurringDayFlags).length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-3.5 h-3.5 bg-violet-100 border border-violet-200 rounded flex items-center justify-center text-[7px] font-bold text-violet-700">R</div>
+            <span>Recurring</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded"></div>
-            <span>Booked</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-gradient-to-br from-blue-500 to-blue-600 rounded"></div>
-            <span>Selected</span>
-          </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 bg-emerald-100 border border-emerald-200 rounded" />
+          <span>Available</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 bg-blue-100 border border-blue-200 rounded" />
+          <span>Booked</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 bg-blue-600 rounded" />
+          <span>Selected</span>
         </div>
       </div>
     </div>
