@@ -1,9 +1,10 @@
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users } from 'lucide-react'
 import Calendar from './Calendar'
+import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
 
 function BookingPage() {
   const { slug } = useParams()
@@ -124,25 +125,49 @@ function BookingPage() {
   const hasStaff = staffMembers.length > 0
   const showStaffStep = staffMembers.length > 1
 
-  // Filter slots by service duration and selected staff
-  const getCompatibleSlots = () => {
-    let slots = availability.filter((s) => s.available)
+  // Buffer minutes from shop settings
+  const bufferMinutes = shop?.bufferMinutes || 0
 
-    // Filter by service duration
+  // Compute all compatible slots: merge manual + generated from weekly hours
+  const compatibleSlots = useMemo(() => {
+    const now = new Date()
+
+    // Manual slots — filter for available and future
+    let manualSlots = availability.filter((s) => s.available)
+
     if (selectedService) {
-      slots = slots.filter((slot) => slot.duration >= selectedService.duration)
+      manualSlots = manualSlots.filter((slot) => slot.duration >= selectedService.duration)
     }
 
-    // Filter by staff
     if (selectedStaff && selectedStaff !== 'any') {
-      slots = slots.filter((slot) => slot.staffId === selectedStaff.id || !slot.staffId)
+      manualSlots = manualSlots.filter(
+        (slot) => slot.staffId === selectedStaff.id || !slot.staffId
+      )
     }
-    // 'any' or null: show all available slots
 
-    return slots
-  }
+    // If no service selected, can't determine duration for generated slots — show only manual
+    if (!selectedService) return manualSlots
 
-  const compatibleSlots = getCompatibleSlots()
+    // Determine which staff to generate for
+    const relevantStaff =
+      selectedStaff && selectedStaff !== 'any'
+        ? staffMembers.filter((s) => s.id === selectedStaff.id)
+        : staffMembers
+
+    // Generate slots from weekly hours for next 4 weeks
+    const generatedSlots = generateAllSlots(
+      relevantStaff,
+      selectedService.duration,
+      bufferMinutes,
+      4
+    ).filter((slot) => new Date(`${slot.date}T${slot.time}`) > now)
+
+    // Merge: manual slots take priority at same staff+date+time
+    const merged = mergeSlots(generatedSlots, manualSlots)
+
+    // Filter out slots that conflict with existing bookings
+    return filterBookedSlots(merged, bookings, bufferMinutes)
+  }, [availability, selectedService, selectedStaff, staffMembers, bookings, bufferMinutes])
 
   const handleSelectService = (service) => {
     setSelectedService(service)
@@ -234,9 +259,12 @@ function BookingPage() {
 
       await addDoc(collection(db, 'shops', shopId, 'bookings'), bookingData)
 
-      await updateDoc(doc(db, 'shops', shopId, 'availability', selectedSlot.id), {
-        available: false
-      })
+      // Only mark manual availability slots as unavailable (skip generated slots)
+      if (!selectedSlot.generated) {
+        await updateDoc(doc(db, 'shops', shopId, 'availability', selectedSlot.id), {
+          available: false
+        })
+      }
 
       setClientInfo({ name: '', email: '', phone: '' })
       setShowBookingForm(false)

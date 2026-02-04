@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
-function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelectDate }) {
+function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelectDate, recurringDayFlags = {} }) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
 
   const getDaysInMonth = (date) => {
@@ -53,6 +53,10 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
 
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
+  // Compute today at midnight for comparisons
+  const todayDate = new Date()
+  todayDate.setHours(0, 0, 0, 0)
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
       <div className="flex justify-between items-center mb-5">
@@ -99,6 +103,11 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
                           today.getMonth() === month &&
                           today.getFullYear() === year
 
+          // Check for recurring hours on this day of the week
+          const cellDate = new Date(year, month, day)
+          const dayOfWeek = cellDate.getDay()
+          const hasRecurring = recurringDayFlags[dayOfWeek] && cellDate >= todayDate
+
           return (
             <button
               key={day}
@@ -107,7 +116,7 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
                 relative p-2 text-center rounded-lg text-sm font-semibold transition-all min-h-[60px] flex flex-col items-center justify-start
                 ${selected
                   ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105'
-                  : hasData
+                  : hasData || hasRecurring
                     ? 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 hover:scale-105 cursor-pointer'
                     : isToday
                       ? 'bg-slate-100 text-slate-900 border border-slate-300'
@@ -117,8 +126,17 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
               <span className={`text-sm ${isToday && !selected ? 'underline decoration-2 underline-offset-2' : ''}`}>
                 {day}
               </span>
-              {hasData && (
+              {(hasData || hasRecurring) && (
                 <div className="flex gap-1 mt-1 flex-wrap justify-center">
+                  {hasRecurring && (
+                    <span className={`text-[10px] font-bold px-1 rounded ${
+                      selected
+                        ? 'bg-white/25 text-white'
+                        : 'bg-purple-100 text-purple-700'
+                    }`}>
+                      R
+                    </span>
+                  )}
                   {availableCount > 0 && (
                     <span className={`text-[10px] font-bold px-1 rounded ${
                       selected
@@ -146,6 +164,12 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
 
       <div className="mt-5 p-3 bg-slate-50 rounded-lg">
         <div className="flex flex-wrap gap-4 text-xs text-slate-600">
+          {Object.keys(recurringDayFlags).length > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-purple-100 border border-purple-200 rounded flex items-center justify-center text-[8px] font-bold text-purple-700">R</div>
+              <span>Recurring hours</span>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
             <span>Available slots</span>
