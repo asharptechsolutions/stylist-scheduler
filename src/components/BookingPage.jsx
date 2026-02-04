@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
-import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
+import { useParams, Link } from 'react-router-dom'
+import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { Calendar as CalendarIcon, Clock, Lock, CheckCircle } from 'lucide-react'
 import Calendar from './Calendar'
 
-function BookingPage({ onOwnerClick }) {
+function BookingPage() {
+  const { slug } = useParams()
+  const [shop, setShop] = useState(null)
+  const [shopId, setShopId] = useState(null)
+  const [shopLoading, setShopLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
+
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
   const [showBookingForm, setShowBookingForm] = useState(false)
@@ -18,10 +25,37 @@ function BookingPage({ onOwnerClick }) {
     phone: ''
   })
 
-  // Real-time listener for availability
+  // Look up shop by slug
   useEffect(() => {
+    const lookupShop = async () => {
+      setShopLoading(true)
+      setNotFound(false)
+      try {
+        const q = query(collection(db, 'shops'), where('slug', '==', slug))
+        const snapshot = await getDocs(q)
+        if (snapshot.empty) {
+          setNotFound(true)
+        } else {
+          const shopDoc = snapshot.docs[0]
+          setShop(shopDoc.data())
+          setShopId(shopDoc.id)
+        }
+      } catch (err) {
+        console.error('Error looking up shop:', err)
+        setNotFound(true)
+      } finally {
+        setShopLoading(false)
+      }
+    }
+    lookupShop()
+  }, [slug])
+
+  // Real-time listeners for shop subcollections
+  useEffect(() => {
+    if (!shopId) return
+
     const unsubAvailability = onSnapshot(
-      collection(db, 'availability'),
+      collection(db, 'shops', shopId, 'availability'),
       (snapshot) => {
         const now = new Date()
         const slots = snapshot.docs
@@ -35,7 +69,7 @@ function BookingPage({ onOwnerClick }) {
     )
 
     const unsubBookings = onSnapshot(
-      collection(db, 'bookings'),
+      collection(db, 'shops', shopId, 'bookings'),
       (snapshot) => {
         const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
         setBookings(items)
@@ -46,7 +80,7 @@ function BookingPage({ onOwnerClick }) {
       unsubAvailability()
       unsubBookings()
     }
-  }, [])
+  }, [shopId])
 
   const handleBookSlot = (slot) => {
     setSelectedSlot(slot)
@@ -59,8 +93,7 @@ function BookingPage({ onOwnerClick }) {
     setSubmitting(true)
 
     try {
-      // Create the booking document
-      await addDoc(collection(db, 'bookings'), {
+      await addDoc(collection(db, 'shops', shopId, 'bookings'), {
         slotId: selectedSlot.id,
         date: selectedSlot.date,
         time: selectedSlot.time,
@@ -71,8 +104,7 @@ function BookingPage({ onOwnerClick }) {
         bookedAt: new Date().toISOString()
       })
 
-      // Mark the slot as unavailable
-      await updateDoc(doc(db, 'availability', selectedSlot.id), {
+      await updateDoc(doc(db, 'shops', shopId, 'availability', selectedSlot.id), {
         available: false
       })
 
@@ -101,6 +133,34 @@ function BookingPage({ onOwnerClick }) {
     return `${displayHour}:${minutes} ${ampm}`
   }
 
+  if (shopLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-slate-400 text-lg">Loading…</div>
+      </div>
+    )
+  }
+
+  if (notFound) {
+    return (
+      <div className="max-w-md mx-auto mt-20">
+        <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10 text-center">
+          <div className="text-6xl mb-4">🔍</div>
+          <h1 className="text-3xl font-bold text-slate-900 mb-3">Shop Not Found</h1>
+          <p className="text-slate-600 mb-6">
+            We couldn't find a shop with the URL "<span className="font-mono text-blue-600">{slug}</span>".
+          </p>
+          <Link
+            to="/"
+            className="inline-block px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 transition-all"
+          >
+            Go Home
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   const availableDates = [...new Set(
     availability
       .filter(slot => slot.available)
@@ -116,22 +176,21 @@ function BookingPage({ onOwnerClick }) {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-4xl font-bold text-slate-900 mb-2 tracking-tight">
-            Book Your Appointment
+            {shop.name}
           </h1>
           <p className="text-slate-600 text-base">
-            Choose an available time slot
+            Choose an available time slot to book your appointment
           </p>
         </div>
-        <button 
-          onClick={onOwnerClick}
+        <Link
+          to={`/shop/${slug}/login`}
           className="flex items-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
         >
           <Lock className="w-4 h-4" />
           Owner Login
-        </button>
+        </Link>
       </div>
 
-      {/* Inline confirmation / error message */}
       {confirmationMessage && (
         <div className={`mb-6 p-5 rounded-xl flex items-center gap-3 ${
           confirmationMessage.startsWith('✅')

@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react'
-import { collection, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
-import { db } from '../firebase'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { signOut } from 'firebase/auth'
+import { auth, db } from '../firebase'
 import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 
-function Dashboard({ onLogout, onBackToBooking }) {
+function Dashboard({ user }) {
+  const { slug } = useParams()
+  const navigate = useNavigate()
+
+  const [shop, setShop] = useState(null)
+  const [shopId, setShopId] = useState(null)
+  const [shopLoading, setShopLoading] = useState(true)
+  const [unauthorized, setUnauthorized] = useState(false)
+
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
   const [selectedDate, setSelectedDate] = useState(null)
@@ -15,10 +25,53 @@ function Dashboard({ onLogout, onBackToBooking }) {
     slotDuration: '60'
   })
 
-  // Real-time listeners for both collections
+  // Check auth & ownership
   useEffect(() => {
+    if (!user) {
+      navigate(`/shop/${slug}/login`, { replace: true })
+      return
+    }
+
+    const checkOwnership = async () => {
+      setShopLoading(true)
+      try {
+        const q = query(collection(db, 'shops'), where('slug', '==', slug))
+        const snapshot = await getDocs(q)
+
+        if (snapshot.empty) {
+          setUnauthorized(true)
+          setShopLoading(false)
+          return
+        }
+
+        const shopDoc = snapshot.docs[0]
+        const shopData = shopDoc.data()
+
+        if (shopData.ownerUid !== user.uid) {
+          setUnauthorized(true)
+          setShopLoading(false)
+          return
+        }
+
+        setShop(shopData)
+        setShopId(shopDoc.id)
+      } catch (err) {
+        console.error('Error checking ownership:', err)
+        setUnauthorized(true)
+      } finally {
+        setShopLoading(false)
+      }
+    }
+
+    checkOwnership()
+  }, [user, slug, navigate])
+
+  // Real-time listeners for shop subcollections
+  useEffect(() => {
+    if (!shopId) return
+
     const unsubAvailability = onSnapshot(
-      collection(db, 'availability'),
+      collection(db, 'shops', shopId, 'availability'),
       (snapshot) => {
         const slots = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
         setAvailability(slots)
@@ -26,7 +79,7 @@ function Dashboard({ onLogout, onBackToBooking }) {
     )
 
     const unsubBookings = onSnapshot(
-      collection(db, 'bookings'),
+      collection(db, 'shops', shopId, 'bookings'),
       (snapshot) => {
         const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
         setBookings(items)
@@ -37,7 +90,12 @@ function Dashboard({ onLogout, onBackToBooking }) {
       unsubAvailability()
       unsubBookings()
     }
-  }, [])
+  }, [shopId])
+
+  const handleLogout = async () => {
+    await signOut(auth)
+    navigate(`/shop/${slug}`, { replace: true })
+  }
 
   const generateTimeSlots = async (e) => {
     e.preventDefault()
@@ -58,7 +116,7 @@ function Dashboard({ onLogout, onBackToBooking }) {
       const mins = currentMinutes % 60
       const timeString = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
       
-      await addDoc(collection(db, 'availability'), {
+      await addDoc(collection(db, 'shops', shopId, 'availability'), {
         date: date,
         time: timeString,
         duration: duration,
@@ -72,22 +130,20 @@ function Dashboard({ onLogout, onBackToBooking }) {
   }
 
   const removeSlot = async (id) => {
-    await deleteDoc(doc(db, 'availability', id))
+    await deleteDoc(doc(db, 'shops', shopId, 'availability', id))
   }
 
   const cancelBooking = async (bookingId) => {
     const booking = bookings.find(b => b.id === bookingId)
 
-    await deleteDoc(doc(db, 'bookings', bookingId))
+    await deleteDoc(doc(db, 'shops', shopId, 'bookings', bookingId))
 
     if (booking) {
-      // Re-open the slot
       try {
-        await updateDoc(doc(db, 'availability', booking.slotId), {
+        await updateDoc(doc(db, 'shops', shopId, 'availability', booking.slotId), {
           available: true
         })
       } catch (err) {
-        // Slot may have been deleted already — that's fine
         console.warn('Could not re-open slot:', err)
       }
     }
@@ -103,6 +159,34 @@ function Dashboard({ onLogout, onBackToBooking }) {
     })
   }
 
+  if (shopLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-slate-400 text-lg">Loading…</div>
+      </div>
+    )
+  }
+
+  if (unauthorized) {
+    return (
+      <div className="max-w-md mx-auto mt-20">
+        <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10 text-center">
+          <div className="text-6xl mb-4">🔒</div>
+          <h1 className="text-3xl font-bold text-slate-900 mb-3">Unauthorized</h1>
+          <p className="text-slate-600 mb-6">
+            You don't have access to this dashboard.
+          </p>
+          <Link
+            to={`/shop/${slug}/login`}
+            className="inline-block px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 transition-all"
+          >
+            Login
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   const slotsByDate = availability.reduce((acc, slot) => {
     if (!acc[slot.date]) acc[slot.date] = []
     acc[slot.date].push(slot)
@@ -115,7 +199,6 @@ function Dashboard({ onLogout, onBackToBooking }) {
     return acc
   }, {})
 
-  // Filter slots and bookings by selected date if one is chosen
   const filteredSlotDates = selectedDate
     ? Object.keys(slotsByDate).filter(d => d === selectedDate).sort()
     : Object.keys(slotsByDate).sort()
@@ -127,15 +210,15 @@ function Dashboard({ onLogout, onBackToBooking }) {
   return (
     <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-10 shadow-2xl border border-white/10">
       <div className="flex gap-3 mb-8">
-        <button 
-          onClick={onBackToBooking}
+        <Link
+          to={`/shop/${slug}`}
           className="flex items-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
         >
           <Eye className="w-4 h-4" />
           Booking Page
-        </button>
+        </Link>
         <button 
-          onClick={onLogout}
+          onClick={handleLogout}
           className="flex items-center gap-2 px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg shadow-red-500/30"
         >
           <LogOut className="w-4 h-4" />
@@ -144,7 +227,7 @@ function Dashboard({ onLogout, onBackToBooking }) {
       </div>
 
       <div className="border-b-2 border-slate-100 pb-4 mb-8">
-        <h1 className="text-4xl font-bold text-slate-900 mb-2 tracking-tight">Dashboard</h1>
+        <h1 className="text-4xl font-bold text-slate-900 mb-2 tracking-tight">{shop.name}</h1>
         <p className="text-slate-600">Manage your availability and view bookings</p>
       </div>
 

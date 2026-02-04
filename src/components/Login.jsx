@@ -1,13 +1,34 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '../firebase'
+import { collection, query, where, getDocs } from 'firebase/firestore'
+import { auth, db } from '../firebase'
 import { Lock, ArrowLeft } from 'lucide-react'
 
-function Login({ onLoginSuccess, onBack }) {
+function Login({ user }) {
+  const { slug } = useParams()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // If already logged in, check ownership and redirect
+  useEffect(() => {
+    if (!user) return
+
+    const checkOwnership = async () => {
+      const q = query(collection(db, 'shops'), where('slug', '==', slug))
+      const snapshot = await getDocs(q)
+      if (!snapshot.empty) {
+        const shopData = snapshot.docs[0].data()
+        if (shopData.ownerUid === user.uid) {
+          navigate(`/shop/${slug}/dashboard`, { replace: true })
+        }
+      }
+    }
+    checkOwnership()
+  }, [user, slug, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -15,10 +36,29 @@ function Login({ onLoginSuccess, onBack }) {
     setLoading(true)
 
     try {
-      await signInWithEmailAndPassword(auth, email, password)
-      onLoginSuccess()
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      const signedInUser = userCredential.user
+
+      // Verify user owns this shop
+      const q = query(collection(db, 'shops'), where('slug', '==', slug))
+      const snapshot = await getDocs(q)
+
+      if (snapshot.empty) {
+        setError('Shop not found')
+        setLoading(false)
+        return
+      }
+
+      const shopData = snapshot.docs[0].data()
+      if (shopData.ownerUid !== signedInUser.uid) {
+        setError('You are not the owner of this shop')
+        await auth.signOut()
+        setLoading(false)
+        return
+      }
+
+      navigate(`/shop/${slug}/dashboard`, { replace: true })
     } catch (err) {
-      // Map Firebase error codes to friendly messages
       switch (err.code) {
         case 'auth/invalid-credential':
         case 'auth/wrong-password':
@@ -104,20 +144,22 @@ function Login({ onLoginSuccess, onBack }) {
             >
               {loading ? 'Signing in…' : 'Login'}
             </button>
-            <button 
-              type="button" 
-              onClick={onBack}
+            <Link
+              to={`/shop/${slug}`}
               className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200 flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" />
               Back
-            </button>
+            </Link>
           </div>
         </form>
 
         <div className="mt-6 p-4 bg-slate-50 border-l-4 border-slate-300 rounded-lg">
           <p className="text-sm text-slate-600">
-            🔒 <strong>Owner access only.</strong> If you need an account, contact the site administrator.
+            🔒 <strong>Owner access only.</strong> If you need an account,{' '}
+            <Link to="/register" className="text-blue-600 hover:text-blue-700 font-medium">
+              register here
+            </Link>.
           </p>
         </div>
       </div>
