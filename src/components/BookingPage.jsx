@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat } from 'lucide-react'
 import Calendar from './Calendar'
 import WaitlistForm from './WaitlistForm'
 import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
@@ -62,6 +62,11 @@ function BookingPage() {
   })
   const [lastRefCode, setLastRefCode] = useState('')
   const [showWaitlistForm, setShowWaitlistForm] = useState(false)
+
+  // Recurring appointment state
+  const [recurringEnabled, setRecurringEnabled] = useState(false)
+  const [recurringInterval, setRecurringInterval] = useState('biweekly')
+  const [recurringResult, setRecurringResult] = useState(null) // { created, skipped } after booking
 
   // Look up shop by slug
   useEffect(() => {
@@ -196,6 +201,105 @@ function BookingPage() {
     return filterBookedSlots(merged, bookings, bufferMinutes)
   }, [availability, selectedService, selectedStaff, staffMembers, bookings, bufferMinutes])
 
+  // ── Recurring date generation helpers ──
+  const generateRecurringDates = (startDate, interval, months = 3) => {
+    const dates = []
+    const start = new Date(startDate + 'T12:00:00')
+    const end = new Date(start)
+    end.setMonth(end.getMonth() + months)
+
+    let current = new Date(start)
+    // Skip the first date (it's the original booking)
+    if (interval === 'weekly') {
+      current.setDate(current.getDate() + 7)
+    } else if (interval === 'biweekly') {
+      current.setDate(current.getDate() + 14)
+    } else if (interval === 'fourweekly') {
+      current.setDate(current.getDate() + 28)
+    } else if (interval === 'monthly') {
+      current.setMonth(current.getMonth() + 1)
+    }
+
+    while (current <= end) {
+      const y = current.getFullYear()
+      const m = String(current.getMonth() + 1).padStart(2, '0')
+      const d = String(current.getDate()).padStart(2, '0')
+      dates.push(`${y}-${m}-${d}`)
+
+      if (interval === 'weekly') {
+        current.setDate(current.getDate() + 7)
+      } else if (interval === 'biweekly') {
+        current.setDate(current.getDate() + 14)
+      } else if (interval === 'fourweekly') {
+        current.setDate(current.getDate() + 28)
+      } else if (interval === 'monthly') {
+        current.setMonth(current.getMonth() + 1)
+      }
+    }
+    return dates
+  }
+
+  // Preview of recurring bookings
+  const recurringPreview = useMemo(() => {
+    if (!recurringEnabled || !selectedSlot) return null
+
+    const futureDates = generateRecurringDates(selectedSlot.date, recurringInterval)
+    const duration = selectedService ? selectedService.duration : (selectedSlot.duration || 60)
+    const staffId = (selectedStaff && selectedStaff !== 'any') ? selectedStaff.id : selectedSlot.staffId
+    const time = selectedSlot.time
+
+    // Check conflicts against existing bookings
+    const activeBookings = bookings.filter(b => !b.status || b.status === 'pending' || b.status === 'confirmed')
+    const timeToMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+    const slotStart = timeToMin(time)
+    const slotEnd = slotStart + duration
+
+    let available = []
+    let conflicts = []
+
+    // Track dates we've already "booked" in this batch to avoid self-conflicts
+    const batchDates = new Set()
+
+    futureDates.forEach((date) => {
+      const hasConflict = activeBookings.some((booking) => {
+        if (staffId && booking.staffId && booking.staffId !== staffId) return false
+        if (booking.date !== date) return false
+        const bStart = timeToMin(booking.time)
+        const bDuration = booking.serviceDuration || booking.duration || duration
+        const bEnd = bStart + bDuration
+        const buffer = bufferMinutes || 0
+        const noConflict = slotEnd + buffer <= bStart || bEnd + buffer <= slotStart
+        return !noConflict
+      })
+
+      if (hasConflict || batchDates.has(date)) {
+        conflicts.push(date)
+      } else {
+        available.push(date)
+        batchDates.add(date)
+      }
+    })
+
+    const endDate = futureDates.length > 0 ? futureDates[futureDates.length - 1] : selectedSlot.date
+    const endDateFormatted = new Date(endDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+    const intervalLabels = {
+      weekly: 'week',
+      biweekly: '2 weeks',
+      fourweekly: '4 weeks',
+      monthly: 'month',
+    }
+
+    return {
+      available,
+      conflicts,
+      total: available.length + 1, // +1 for the original booking
+      skipped: conflicts.length,
+      endDate: endDateFormatted,
+      intervalLabel: intervalLabels[recurringInterval] || recurringInterval,
+    }
+  }, [recurringEnabled, recurringInterval, selectedSlot, selectedService, selectedStaff, bookings, bufferMinutes])
+
   const handleSelectService = (service) => {
     setSelectedService(service)
     if (staffMembers.length > 1) {
@@ -261,9 +365,16 @@ function BookingPage() {
   const confirmBooking = async (e) => {
     e.preventDefault()
     setSubmitting(true)
+    setRecurringResult(null)
 
     try {
       const refCode = generateRefCode()
+      const status = shop?.requireApproval ? 'pending' : 'confirmed'
+      const recurringGroupId = recurringEnabled ? `rg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : null
+      const recurringUntilDate = recurringEnabled && recurringPreview
+        ? recurringPreview.endDate
+        : null
+
       const bookingData = {
         slotId: selectedSlot.id,
         date: selectedSlot.date,
@@ -273,6 +384,8 @@ function BookingPage() {
         clientEmail: clientInfo.email,
         clientPhone: clientInfo.phone,
         bookedAt: new Date().toISOString(),
+        status,
+        refCode,
       }
 
       if (selectedService) {
@@ -290,9 +403,15 @@ function BookingPage() {
         bookingData.staffName = selectedSlot.staffName || ''
       }
 
-      bookingData.status = shop?.requireApproval ? 'pending' : 'confirmed'
-      bookingData.refCode = refCode
+      // Add recurring fields
+      if (recurringEnabled && recurringGroupId) {
+        bookingData.recurring = true
+        bookingData.recurringInterval = recurringInterval
+        bookingData.recurringGroupId = recurringGroupId
+        bookingData.recurringUntil = recurringUntilDate
+      }
 
+      // Create the primary booking
       await addDoc(collection(db, 'shops', shopId, 'bookings'), bookingData)
 
       if (!selectedSlot.generated) {
@@ -301,12 +420,37 @@ function BookingPage() {
         })
       }
 
+      // Create recurring bookings
+      let createdCount = 1
+      let skippedCount = 0
+
+      if (recurringEnabled && recurringPreview) {
+        const availableDatesForRecurring = recurringPreview.available
+        skippedCount = recurringPreview.skipped
+
+        for (const date of availableDatesForRecurring) {
+          const recurRefCode = generateRefCode()
+          const recurBooking = {
+            ...bookingData,
+            date,
+            slotId: `recurring-${recurringGroupId}-${date}`,
+            refCode: recurRefCode,
+            bookedAt: new Date().toISOString(),
+          }
+          await addDoc(collection(db, 'shops', shopId, 'bookings'), recurBooking)
+          createdCount++
+        }
+
+        setRecurringResult({ created: createdCount, skipped: skippedCount })
+      }
+
       setClientInfo({ name: '', email: '', phone: '' })
       setShowBookingForm(false)
       setSelectedSlot(null)
       setSelectedService(null)
       setSelectedDate(null)
       setSelectedStaff(staffMembers.length === 1 ? staffMembers[0] : null)
+      setRecurringEnabled(false)
       setLastRefCode(refCode)
       if (shop?.requireApproval) {
         setConfirmationMessage('⏳ Your booking request has been submitted! The shop will review and confirm it shortly.')
@@ -498,6 +642,22 @@ function BookingPage() {
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 mb-2">Booking Confirmed!</h3>
                 <p className="text-slate-600 mb-4">You're all set. We'll send a confirmation to your email.</p>
+                {recurringResult && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center justify-center gap-2 text-blue-700 font-semibold text-sm mb-1">
+                      <Repeat className="w-4 h-4" />
+                      Recurring Series Created
+                    </div>
+                    <p className="text-sm text-slate-700">
+                      {recurringResult.created} appointment{recurringResult.created !== 1 ? 's' : ''} booked
+                    </p>
+                    {recurringResult.skipped > 0 && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        ⚠ {recurringResult.skipped} date{recurringResult.skipped !== 1 ? 's' : ''} skipped due to conflicts
+                      </p>
+                    )}
+                  </div>
+                )}
                 {lastRefCode && (
                   <div className="mb-4">
                     <p className="text-sm text-slate-500 mb-1">Your reference</p>
@@ -528,6 +688,22 @@ function BookingPage() {
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 mb-2">Request Submitted!</h3>
                 <p className="text-slate-600 mb-4">Your booking request has been submitted! The shop will review and confirm it shortly.</p>
+                {recurringResult && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center justify-center gap-2 text-blue-700 font-semibold text-sm mb-1">
+                      <Repeat className="w-4 h-4" />
+                      Recurring Series Created
+                    </div>
+                    <p className="text-sm text-slate-700">
+                      {recurringResult.created} appointment{recurringResult.created !== 1 ? 's' : ''} submitted
+                    </p>
+                    {recurringResult.skipped > 0 && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        ⚠ {recurringResult.skipped} date{recurringResult.skipped !== 1 ? 's' : ''} skipped due to conflicts
+                      </p>
+                    )}
+                  </div>
+                )}
                 {lastRefCode && (
                   <div className="mb-4">
                     <p className="text-sm text-slate-500 mb-1">Your reference</p>
@@ -936,6 +1112,70 @@ function BookingPage() {
                   placeholder="(555) 123-4567"
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
                 />
+              </div>
+
+              {/* ─── Recurring Appointment Toggle ─── */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Repeat className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold text-slate-800">Make this recurring</span>
+                      <p className="text-xs text-slate-500">Book the same slot on a regular schedule</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRecurringEnabled(!recurringEnabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                      recurringEnabled ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                        recurringEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {recurringEnabled && (
+                  <div className="space-y-3 pt-1 animate-fade-in">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Repeat every
+                      </label>
+                      <select
+                        value={recurringInterval}
+                        onChange={(e) => setRecurringInterval(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium"
+                      >
+                        <option value="weekly">Week</option>
+                        <option value="biweekly">2 Weeks</option>
+                        <option value="fourweekly">4 Weeks</option>
+                        <option value="monthly">Month</option>
+                      </select>
+                    </div>
+
+                    {recurringPreview && (
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-sm text-blue-800 font-medium">
+                          📅 Every {recurringPreview.intervalLabel} through {recurringPreview.endDate}
+                        </p>
+                        <p className="text-xs text-blue-600 mt-1">
+                          {recurringPreview.total} total appointment{recurringPreview.total !== 1 ? 's' : ''}
+                        </p>
+                        {recurringPreview.skipped > 0 && (
+                          <p className="text-xs text-amber-600 mt-1 font-medium">
+                            ⚠ {recurringPreview.skipped} date{recurringPreview.skipped !== 1 ? 's' : ''} will be skipped due to existing bookings
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 pt-2">
