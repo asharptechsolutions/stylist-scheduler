@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus } from 'lucide-react'
 import Calendar from './Calendar'
+import WaitlistForm from './WaitlistForm'
 import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
 
 /* ── Initials avatar ── */
@@ -60,6 +61,7 @@ function BookingPage() {
     phone: ''
   })
   const [lastRefCode, setLastRefCode] = useState('')
+  const [showWaitlistForm, setShowWaitlistForm] = useState(false)
 
   // Look up shop by slug
   useEffect(() => {
@@ -711,18 +713,41 @@ function BookingPage() {
             )}
 
             {availableDates.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
-                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <CalendarIcon className="w-8 h-8 text-slate-400" />
-                </div>
-                <h3 className="text-xl font-bold text-slate-900 mb-2">
-                  No available slots
-                </h3>
-                <p className="text-slate-600 max-w-md mx-auto">
-                  {selectedService
-                    ? `No time slots available for ${selectedService.name} (${formatDuration(selectedService.duration)}). Check back soon!`
-                    : 'Check back soon for new availability!'}
-                </p>
+              <div>
+                {!showWaitlistForm ? (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+                    <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <CalendarIcon className="w-8 h-8 text-slate-400" />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">
+                      No available slots
+                    </h3>
+                    <p className="text-slate-600 max-w-md mx-auto mb-6">
+                      {selectedService
+                        ? `No time slots available for ${selectedService.name} (${formatDuration(selectedService.duration)}). Join the waitlist to be notified when a slot opens up!`
+                        : 'Check back soon for new availability, or join the waitlist!'}
+                    </p>
+                    <button
+                      onClick={() => setShowWaitlistForm(true)}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/25 hover:-translate-y-0.5"
+                    >
+                      <ListPlus className="w-4 h-4" />
+                      Join Waitlist
+                    </button>
+                  </div>
+                ) : (
+                  <div className="max-w-lg mx-auto">
+                    <WaitlistForm
+                      shopId={shopId}
+                      slug={slug}
+                      selectedService={selectedService}
+                      selectedStaff={selectedStaff}
+                      staffMembers={staffMembers}
+                      preferredDate={null}
+                      onCancel={() => setShowWaitlistForm(false)}
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -750,7 +775,28 @@ function BookingPage() {
                     </div>
                     {availableSlots.length === 0 ? (
                       <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-                        <p className="text-slate-500">No slots available for this date</p>
+                        <p className="text-slate-500 mb-4">No times available for this date</p>
+                        {!showWaitlistForm ? (
+                          <button
+                            onClick={() => setShowWaitlistForm(true)}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-all shadow-md shadow-blue-600/20 hover:shadow-lg"
+                          >
+                            <ListPlus className="w-4 h-4" />
+                            Join the Waitlist
+                          </button>
+                        ) : (
+                          <div className="mt-4 text-left">
+                            <WaitlistForm
+                              shopId={shopId}
+                              slug={slug}
+                              selectedService={selectedService}
+                              selectedStaff={selectedStaff}
+                              staffMembers={staffMembers}
+                              preferredDate={selectedDate}
+                              onCancel={() => setShowWaitlistForm(false)}
+                            />
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 stagger-children">

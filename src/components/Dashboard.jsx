@@ -3,10 +3,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
+import { findMatchingEntries } from '../utils/waitlistMatcher'
 
 const DAY_LABELS = [
   { key: 'monday', short: 'Mon' },
@@ -42,6 +43,8 @@ function Dashboard({ user }) {
   const [selectedDate, setSelectedDate] = useState(null)
   const [staffFilter, setStaffFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [waitlist, setWaitlist] = useState([])
+  const [waitlistAlert, setWaitlistAlert] = useState(null) // { matches, slot }
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
@@ -122,10 +125,21 @@ function Dashboard({ user }) {
       }
     )
 
+    const unsubWaitlist = onSnapshot(
+      collection(db, 'shops', shopId, 'waitlist'),
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
+        setWaitlist(items)
+      }
+    )
+
     return () => {
       unsubAvailability()
       unsubBookings()
       unsubStaff()
+      unsubWaitlist()
     }
   }, [shopId])
 
@@ -178,6 +192,48 @@ function Dashboard({ user }) {
     await deleteDoc(doc(db, 'shops', shopId, 'availability', id))
   }
 
+  const checkWaitlistMatches = (booking) => {
+    const freedSlot = {
+      date: booking.date,
+      time: booking.time,
+      staffId: booking.staffId || null,
+      serviceId: booking.serviceId || null,
+    }
+    const matches = findMatchingEntries(waitlist, freedSlot)
+    if (matches.length > 0) {
+      setWaitlistAlert({ matches, slot: freedSlot })
+    }
+  }
+
+  const notifyWaitlistEntries = async (entries, slot) => {
+    for (const entry of entries) {
+      await updateDoc(doc(db, 'shops', shopId, 'waitlist', entry.id), {
+        status: 'notified',
+        notifiedAt: new Date().toISOString(),
+        notifiedSlot: {
+          date: slot.date,
+          time: slot.time,
+          staffId: slot.staffId || null,
+          staffName: slot.staffName || null,
+        },
+      })
+    }
+    setWaitlistAlert(null)
+  }
+
+  const notifySingleEntry = async (entryId) => {
+    await updateDoc(doc(db, 'shops', shopId, 'waitlist', entryId), {
+      status: 'notified',
+      notifiedAt: new Date().toISOString(),
+    })
+  }
+
+  const removeWaitlistEntry = async (entryId) => {
+    await updateDoc(doc(db, 'shops', shopId, 'waitlist', entryId), {
+      status: 'expired',
+    })
+  }
+
   const cancelBooking = async (bookingId) => {
     const booking = bookings.find(b => b.id === bookingId)
 
@@ -194,6 +250,8 @@ function Dashboard({ user }) {
         console.warn('Could not re-open slot:', err)
       }
     }
+
+    if (booking) checkWaitlistMatches(booking)
   }
 
   const approveBooking = async (bookingId) => {
@@ -218,6 +276,8 @@ function Dashboard({ user }) {
         console.warn('Could not re-open slot:', err)
       }
     }
+
+    if (booking) checkWaitlistMatches(booking)
   }
 
   const toggleRequireApproval = async () => {
@@ -306,6 +366,10 @@ function Dashboard({ user }) {
     return bookings.filter(b => b.status === 'pending').length
   }, [bookings])
 
+  const waitlistWaitingCount = useMemo(() => {
+    return waitlist.filter(w => w.status === 'waiting').length
+  }, [waitlist])
+
   if (shopLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -385,6 +449,7 @@ function Dashboard({ user }) {
 
   const tabs = [
     { key: 'schedule', label: 'Schedule', icon: Calendar },
+    { key: 'waitlist', label: 'Waitlist', icon: ListOrdered },
     { key: 'staff', label: 'Staff', icon: Users },
     { key: 'services', label: 'Services', icon: Tag },
     { key: 'settings', label: 'Settings', icon: Settings },
@@ -426,6 +491,11 @@ function Dashboard({ user }) {
                     {tab.key === 'schedule' && pendingCount > 0 && (
                       <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full leading-none">
                         {pendingCount}
+                      </span>
+                    )}
+                    {tab.key === 'waitlist' && waitlistWaitingCount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-blue-500 text-white text-[10px] font-bold rounded-full leading-none">
+                        {waitlistWaitingCount}
                       </span>
                     )}
                   </button>
@@ -491,6 +561,287 @@ function Dashboard({ user }) {
         {activeTab === 'services' && (
           <div className="bg-white rounded-xl border border-slate-200 p-6 animate-fade-in">
             <ServiceManager shopId={shopId} />
+          </div>
+        )}
+
+        {/* Waitlist Alert Modal */}
+        {waitlistAlert && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Waitlist Match!</h3>
+                  <p className="text-sm text-slate-500">
+                    {waitlistAlert.matches.length} client{waitlistAlert.matches.length !== 1 ? 's' : ''} on the waitlist match this freed slot
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-3 mb-4 text-sm">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <Calendar className="w-4 h-4 text-blue-500" />
+                  <span className="font-medium">
+                    {new Date(waitlistAlert.slot.date + 'T12:00:00').toLocaleDateString('en-US', {
+                      weekday: 'short', month: 'short', day: 'numeric'
+                    })} at {(() => {
+                      const [h, m] = waitlistAlert.slot.time.split(':')
+                      const hour = parseInt(h)
+                      return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`
+                    })()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-5 max-h-48 overflow-y-auto">
+                {waitlistAlert.matches.map((entry) => (
+                  <div key={entry.id} className="flex items-center justify-between px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+                    <div>
+                      <span className="text-sm font-semibold text-slate-900">{entry.clientName}</span>
+                      <span className="text-xs text-slate-500 ml-2">{entry.serviceName}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => notifyWaitlistEntries(waitlistAlert.matches, waitlistAlert.slot)}
+                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-all shadow-md shadow-blue-600/20"
+                >
+                  <Bell className="w-4 h-4" />
+                  Notify All
+                </button>
+                <button
+                  onClick={() => setWaitlistAlert(null)}
+                  className="px-5 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold text-sm transition-all border border-slate-200"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Waitlist Tab */}
+        {activeTab === 'waitlist' && (
+          <div className="animate-fade-in">
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-900">Waitlist</h2>
+                  {waitlistWaitingCount > 0 && (
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold rounded-full">
+                      {waitlistWaitingCount} waiting
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
+                  {waitlist.length} total
+                </span>
+              </div>
+
+              {waitlist.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <ListOrdered className="w-6 h-6 text-slate-400" />
+                  </div>
+                  <p className="text-sm text-slate-500 font-medium mb-1">No waitlist entries yet</p>
+                  <p className="text-xs text-slate-400">
+                    Clients can join the waitlist when no slots are available on your booking page.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  {/* Group by service */}
+                  {(() => {
+                    const grouped = {}
+                    waitlist.forEach((entry) => {
+                      const key = entry.serviceName || 'Other'
+                      if (!grouped[key]) grouped[key] = []
+                      grouped[key].push(entry)
+                    })
+
+                    return Object.entries(grouped)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([serviceName, entries]) => (
+                        <div key={serviceName} className="mb-6 last:mb-0">
+                          <h3 className="text-sm font-bold text-slate-700 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
+                            <Tag className="w-3.5 h-3.5 text-blue-500" />
+                            {serviceName}
+                            <span className="text-xs font-medium text-slate-400">
+                              ({entries.filter(e => e.status === 'waiting').length} waiting)
+                            </span>
+                          </h3>
+                          <div className="space-y-2.5">
+                            {entries
+                              .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
+                              .map((entry) => {
+                                const statusStyles = {
+                                  waiting: 'bg-blue-50 text-blue-700 border-blue-200',
+                                  notified: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                  booked: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                  expired: 'bg-slate-100 text-slate-500 border-slate-200',
+                                }
+                                const statusLabels = {
+                                  waiting: 'Waiting',
+                                  notified: 'Notified',
+                                  booked: 'Booked',
+                                  expired: 'Removed',
+                                }
+
+                                const waitingSince = entry.createdAt
+                                  ? (() => {
+                                      const diff = Date.now() - new Date(entry.createdAt).getTime()
+                                      const days = Math.floor(diff / 86400000)
+                                      const hours = Math.floor(diff / 3600000)
+                                      if (days > 0) return `${days}d`
+                                      return `${hours}h`
+                                    })()
+                                  : ''
+
+                                const dayLabels = {
+                                  monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed',
+                                  thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
+                                }
+
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    className="group border border-slate-200 rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all"
+                                  >
+                                    <div className="flex items-start justify-between mb-2">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                          <User className="w-4 h-4 text-blue-600" />
+                                        </div>
+                                        <div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-semibold text-slate-900 text-sm">
+                                              {entry.clientName}
+                                            </span>
+                                            <span
+                                              className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-md border ${
+                                                statusStyles[entry.status] || statusStyles.waiting
+                                              }`}
+                                            >
+                                              {statusLabels[entry.status] || 'Waiting'}
+                                            </span>
+                                          </div>
+                                          <div className="text-xs text-slate-500">
+                                            Joined {waitingSince} ago
+                                            {entry.refCode && (
+                                              <span className="font-mono text-slate-400 ml-2">
+                                                {entry.refCode}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        {entry.status === 'waiting' && (
+                                          <>
+                                            <button
+                                              onClick={() => notifySingleEntry(entry.id)}
+                                              className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all"
+                                              title="Notify client"
+                                            >
+                                              <Bell className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                              onClick={() => removeWaitlistEntry(entry.id)}
+                                              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                              title="Remove from waitlist"
+                                            >
+                                              <X className="w-4 h-4" />
+                                            </button>
+                                          </>
+                                        )}
+                                        {entry.status === 'notified' && (
+                                          <button
+                                            onClick={() => removeWaitlistEntry(entry.id)}
+                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                            title="Remove"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="ml-[46px] space-y-0.5 text-xs text-slate-500">
+                                      {entry.staffName && entry.staffName !== 'Any Available' && (
+                                        <div className="flex items-center gap-1.5">
+                                          <Users className="w-3 h-3 text-violet-400" />
+                                          <span className="text-violet-600">{entry.staffName}</span>
+                                        </div>
+                                      )}
+
+                                      {entry.preferredDate && (
+                                        <div className="flex items-center gap-1.5">
+                                          <Calendar className="w-3 h-3 text-slate-400" />
+                                          <span>
+                                            Preferred: {new Date(entry.preferredDate + 'T12:00:00').toLocaleDateString('en-US', {
+                                              weekday: 'short', month: 'short', day: 'numeric'
+                                            })}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {entry.preferredDays && entry.preferredDays.length > 0 && (
+                                        <div className="flex items-center gap-1.5">
+                                          <Calendar className="w-3 h-3 text-slate-400" />
+                                          <span>
+                                            Days: {entry.preferredDays.map(d => dayLabels[d] || d).join(', ')}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {entry.preferredTimeRange &&
+                                        !(entry.preferredTimeRange.start === '00:00' && entry.preferredTimeRange.end === '23:59') && (
+                                        <div className="flex items-center gap-1.5">
+                                          <Clock className="w-3 h-3 text-slate-400" />
+                                          <span>
+                                            Time: {formatTimeShort(entry.preferredTimeRange.start)}–{formatTimeShort(entry.preferredTimeRange.end)}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center gap-3">
+                                        <span className="flex items-center gap-1">
+                                          <Mail className="w-3 h-3" />
+                                          {entry.clientEmail}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                          <Phone className="w-3 h-3" />
+                                          {entry.clientPhone}
+                                        </span>
+                                      </div>
+
+                                      {entry.status === 'notified' && entry.notifiedSlot && (
+                                        <div className="mt-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg inline-flex items-center gap-1.5">
+                                          <Bell className="w-3 h-3 text-emerald-500" />
+                                          <span className="text-emerald-700 font-medium">
+                                            Notified about {new Date(entry.notifiedSlot.date + 'T12:00:00').toLocaleDateString('en-US', {
+                                              month: 'short', day: 'numeric'
+                                            })} at {formatTimeShort(entry.notifiedSlot.time)}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                          </div>
+                        </div>
+                      ))
+                  })()}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

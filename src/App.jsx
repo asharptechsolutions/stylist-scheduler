@@ -9,6 +9,7 @@ import BookingPage from './components/BookingPage'
 import Dashboard from './components/Dashboard'
 import Login from './components/Login'
 import ManageBooking from './components/ManageBooking'
+import CheckWaitlist from './components/CheckWaitlist'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -41,6 +42,7 @@ function App() {
         <Route path="/login" element={<SignIn user={user} />} />
         <Route path="/shop/:slug" element={<BookingPage />} />
         <Route path="/shop/:slug/booking/:refCode" element={<ManageBooking />} />
+        <Route path="/shop/:slug/waitlist/:refCode" element={<CheckWaitlist />} />
         <Route path="/shop/:slug/login" element={<Login user={user} />} />
         <Route
           path="/shop/:slug/dashboard"
