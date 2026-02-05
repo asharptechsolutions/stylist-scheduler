@@ -3,12 +3,13 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
 import AnalyticsTab from './AnalyticsTab'
 import WalkInsTab from './WalkInsTab'
+import ClientsTab from './ClientsTab'
 import { findMatchingEntries } from '../utils/waitlistMatcher'
 
 const DAY_LABELS = [
@@ -445,6 +446,57 @@ function Dashboard({ user }) {
   }, [waitlist])
 
   const [walkinsCount, setWalkinsCount] = useState(0)
+  const [clientNotesData, setClientNotesData] = useState({})
+
+  // Compute at-risk client count for badge
+  const atRiskClientCount = useMemo(() => {
+    if (!shop) return 0
+    const warningDays = shop?.winbackSettings?.warningDays || 30
+    const inactiveDays = shop?.winbackSettings?.inactiveDays || 60
+    const winbackEnabled = shop?.winbackSettings?.enabled !== false
+    if (!winbackEnabled) return 0
+
+    const now = new Date()
+    const activeBookingsList = bookings.filter(b => b.status === 'confirmed' || b.status === 'pending' || !b.status)
+    const clientMap = {}
+
+    activeBookingsList.forEach(b => {
+      const email = b.clientEmail?.toLowerCase()
+      if (!email) return
+      if (!clientMap[email] || b.date > clientMap[email]) {
+        clientMap[email] = b.date
+      }
+    })
+
+    let count = 0
+    const encodeEmail = (email) => email.replace(/\./g, '_dot_').replace(/@/g, '_at_')
+
+    Object.entries(clientMap).forEach(([email, lastDate]) => {
+      const diff = Math.floor((now.getTime() - new Date(lastDate + 'T12:00:00').getTime()) / 86400000)
+      if (diff > inactiveDays) {
+        const encoded = encodeEmail(email)
+        if (!clientNotesData[encoded]?.contacted) {
+          count++
+        }
+      }
+    })
+
+    return count
+  }, [bookings, shop, clientNotesData])
+
+  // Listen to clientNotes for badge computation
+  useEffect(() => {
+    if (!shopId) return
+    const unsub = onSnapshot(
+      collection(db, 'shops', shopId, 'clientNotes'),
+      (snapshot) => {
+        const notes = {}
+        snapshot.docs.forEach(d => { notes[d.id] = d.data() })
+        setClientNotesData(notes)
+      }
+    )
+    return () => unsub()
+  }, [shopId])
 
   // Listen to walkins count for tab badge
   useEffect(() => {
@@ -538,6 +590,7 @@ function Dashboard({ user }) {
 
   const tabs = [
     { key: 'schedule', label: 'Schedule', icon: Calendar },
+    { key: 'clients', label: 'Clients', icon: Heart },
     { key: 'walkins', label: 'Walk-ins', icon: UserPlus },
     { key: 'analytics', label: 'Analytics', icon: PieChart },
     { key: 'waitlist', label: 'Waitlist', icon: ListOrdered },
@@ -582,6 +635,11 @@ function Dashboard({ user }) {
                     {tab.key === 'schedule' && pendingCount > 0 && (
                       <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full leading-none">
                         {pendingCount}
+                      </span>
+                    )}
+                    {tab.key === 'clients' && atRiskClientCount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded-full leading-none">
+                        {atRiskClientCount}
                       </span>
                     )}
                     {tab.key === 'walkins' && walkinsCount > 0 && (
@@ -644,6 +702,11 @@ function Dashboard({ user }) {
               )
             })}
           </div>
+        )}
+
+        {/* Clients Tab */}
+        {activeTab === 'clients' && (
+          <ClientsTab shopId={shopId} bookings={bookings} shop={shop} slug={slug} />
         )}
 
         {/* Walk-ins Tab */}
@@ -1000,7 +1063,7 @@ function Dashboard({ user }) {
 
         {/* Settings Tab */}
         {activeTab === 'settings' && (
-          <div className="max-w-2xl animate-fade-in">
+          <div className="max-w-2xl animate-fade-in space-y-6">
             <div className="bg-white rounded-xl border border-slate-200 p-6">
               <h2 className="text-lg font-bold text-slate-900 mb-1">Shop Settings</h2>
               <p className="text-sm text-slate-500 mb-6">Configure your booking preferences</p>
@@ -1056,6 +1119,130 @@ function Dashboard({ user }) {
                     <option value="30">30 minutes</option>
                   </select>
                 </div>
+              </div>
+            </div>
+
+            {/* Client Retention / Win-back Settings */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-lg font-bold text-slate-900 mb-1">Client Retention</h2>
+              <p className="text-sm text-slate-500 mb-6">Configure win-back alerts to re-engage inactive clients</p>
+
+              <div className="space-y-4">
+                {/* Enable Win-back Toggle */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="pr-4">
+                    <h3 className="font-semibold text-slate-900 text-sm">Enable Win-back Alerts</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Show alerts when clients haven't visited in a while
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const current = shop?.winbackSettings || {}
+                      const newEnabled = !(current.enabled !== false)
+                      try {
+                        await updateDoc(doc(db, 'shops', shopId), {
+                          winbackSettings: { ...current, enabled: newEnabled }
+                        })
+                        setShop(prev => ({
+                          ...prev,
+                          winbackSettings: { ...(prev.winbackSettings || {}), enabled: newEnabled }
+                        }))
+                      } catch (err) {
+                        console.error('Error updating winback settings:', err)
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                      shop?.winbackSettings?.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                        shop?.winbackSettings?.enabled !== false ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {shop?.winbackSettings?.enabled !== false && (
+                  <>
+                    {/* Warning Days Threshold */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className="pr-4">
+                        <h3 className="font-semibold text-slate-900 text-sm">Getting Cold Threshold</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Flag clients as "Getting Cold" after this many days without a booking
+                        </p>
+                      </div>
+                      <select
+                        value={shop?.winbackSettings?.warningDays || 30}
+                        onChange={async (e) => {
+                          const days = parseInt(e.target.value)
+                          const current = shop?.winbackSettings || {}
+                          try {
+                            await updateDoc(doc(db, 'shops', shopId), {
+                              winbackSettings: { ...current, warningDays: days }
+                            })
+                            setShop(prev => ({
+                              ...prev,
+                              winbackSettings: { ...(prev.winbackSettings || {}), warningDays: days }
+                            }))
+                          } catch (err) {
+                            console.error('Error updating warning days:', err)
+                          }
+                        }}
+                        className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium flex-shrink-0"
+                      >
+                        <option value="14">14 days</option>
+                        <option value="21">21 days</option>
+                        <option value="30">30 days</option>
+                        <option value="45">45 days</option>
+                        <option value="60">60 days</option>
+                      </select>
+                    </div>
+
+                    {/* Inactive Days Threshold */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className="pr-4">
+                        <h3 className="font-semibold text-slate-900 text-sm">At Risk Threshold</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Flag clients as "At Risk" after this many days without a booking
+                        </p>
+                      </div>
+                      <select
+                        value={shop?.winbackSettings?.inactiveDays || 60}
+                        onChange={async (e) => {
+                          const days = parseInt(e.target.value)
+                          const current = shop?.winbackSettings || {}
+                          try {
+                            await updateDoc(doc(db, 'shops', shopId), {
+                              winbackSettings: { ...current, inactiveDays: days }
+                            })
+                            setShop(prev => ({
+                              ...prev,
+                              winbackSettings: { ...(prev.winbackSettings || {}), inactiveDays: days }
+                            }))
+                          } catch (err) {
+                            console.error('Error updating inactive days:', err)
+                          }
+                        }}
+                        className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium flex-shrink-0"
+                      >
+                        <option value="30">30 days</option>
+                        <option value="45">45 days</option>
+                        <option value="60">60 days</option>
+                        <option value="90">90 days</option>
+                        <option value="120">120 days</option>
+                      </select>
+                    </div>
+
+                    <div className="p-3.5 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-800 leading-relaxed">
+                      <strong>💡 Tip:</strong> Clients flagged as "Lost" (over 90 days) will also appear in win-back alerts.
+                      Visit the <strong>Clients</strong> tab to view at-risk clients and send win-back messages.
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
