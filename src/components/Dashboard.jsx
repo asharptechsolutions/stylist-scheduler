@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -41,6 +41,7 @@ function Dashboard({ user }) {
   const [activeTab, setActiveTab] = useState('schedule')
   const [selectedDate, setSelectedDate] = useState(null)
   const [staffFilter, setStaffFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
@@ -180,9 +181,11 @@ function Dashboard({ user }) {
   const cancelBooking = async (bookingId) => {
     const booking = bookings.find(b => b.id === bookingId)
 
-    await deleteDoc(doc(db, 'shops', shopId, 'bookings', bookingId))
+    await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
+      status: 'cancelled'
+    })
 
-    if (booking) {
+    if (booking && booking.slotId && !booking.slotId.startsWith('wh-')) {
       try {
         await updateDoc(doc(db, 'shops', shopId, 'availability', booking.slotId), {
           available: true
@@ -190,6 +193,40 @@ function Dashboard({ user }) {
       } catch (err) {
         console.warn('Could not re-open slot:', err)
       }
+    }
+  }
+
+  const approveBooking = async (bookingId) => {
+    await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
+      status: 'confirmed'
+    })
+  }
+
+  const rejectBooking = async (bookingId) => {
+    const booking = bookings.find(b => b.id === bookingId)
+
+    await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
+      status: 'rejected'
+    })
+
+    if (booking && booking.slotId && !booking.slotId.startsWith('wh-')) {
+      try {
+        await updateDoc(doc(db, 'shops', shopId, 'availability', booking.slotId), {
+          available: true
+        })
+      } catch (err) {
+        console.warn('Could not re-open slot:', err)
+      }
+    }
+  }
+
+  const toggleRequireApproval = async () => {
+    const newValue = !shop?.requireApproval
+    try {
+      await updateDoc(doc(db, 'shops', shopId), { requireApproval: newValue })
+      setShop((prev) => ({ ...prev, requireApproval: newValue }))
+    } catch (err) {
+      console.error('Error updating requireApproval:', err)
     }
   }
 
@@ -265,6 +302,10 @@ function Dashboard({ user }) {
     return { todayBookings, weekBookings, uniqueClients, totalBookings: bookings.length }
   }, [bookings])
 
+  const pendingCount = useMemo(() => {
+    return bookings.filter(b => b.status === 'pending').length
+  }, [bookings])
+
   if (shopLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -327,10 +368,26 @@ function Dashboard({ user }) {
     ? filteredBookingsList.filter(b => b.date === selectedDate)
     : filteredBookingsList
 
+  const displayedBookings = statusFilter === 'all'
+    ? filteredBookings
+    : statusFilter === 'pending'
+      ? filteredBookings.filter(b => b.status === 'pending')
+      : statusFilter === 'confirmed'
+        ? filteredBookings.filter(b => !b.status || b.status === 'confirmed')
+        : filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected')
+
+  const statusCounts = {
+    all: filteredBookings.length,
+    pending: filteredBookings.filter(b => b.status === 'pending').length,
+    confirmed: filteredBookings.filter(b => !b.status || b.status === 'confirmed').length,
+    cancelled: filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected').length,
+  }
+
   const tabs = [
     { key: 'schedule', label: 'Schedule', icon: Calendar },
     { key: 'staff', label: 'Staff', icon: Users },
     { key: 'services', label: 'Services', icon: Tag },
+    { key: 'settings', label: 'Settings', icon: Settings },
   ]
 
   return (
@@ -366,6 +423,11 @@ function Dashboard({ user }) {
                   >
                     <Icon className="w-4 h-4" />
                     <span className="hidden sm:inline">{tab.label}</span>
+                    {tab.key === 'schedule' && pendingCount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full leading-none">
+                        {pendingCount}
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -432,12 +494,75 @@ function Dashboard({ user }) {
           </div>
         )}
 
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="max-w-2xl animate-fade-in">
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-lg font-bold text-slate-900 mb-1">Shop Settings</h2>
+              <p className="text-sm text-slate-500 mb-6">Configure your booking preferences</p>
+
+              <div className="space-y-4">
+                {/* Require Approval Toggle */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="pr-4">
+                    <h3 className="font-semibold text-slate-900 text-sm">Require Booking Approval</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Review and approve bookings before they're confirmed
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleRequireApproval}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                      shop?.requireApproval ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                        shop?.requireApproval ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {shop?.requireApproval && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 leading-relaxed">
+                    <strong>📋 Approval mode is on.</strong> New bookings will appear as "Pending" until you approve or reject them.
+                    Time slots are held while pending to prevent double-booking.
+                  </div>
+                )}
+
+                {/* Buffer Time */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="pr-4">
+                    <h3 className="font-semibold text-slate-900 text-sm">Buffer Time Between Bookings</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Add a gap between consecutive appointments
+                    </p>
+                  </div>
+                  <select
+                    value={shop?.bufferMinutes || 0}
+                    onChange={(e) => updateBufferMinutes(e.target.value)}
+                    className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium flex-shrink-0"
+                  >
+                    <option value="0">No buffer</option>
+                    <option value="5">5 minutes</option>
+                    <option value="10">10 minutes</option>
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Schedule Tab */}
         {activeTab === 'schedule' && (
           <div className="animate-fade-in">
             {/* Settings Row */}
-            <div className="flex flex-wrap gap-4 mb-6">
-              {staff.length > 0 && (
+            {staff.length > 0 && (
+              <div className="flex flex-wrap gap-4 mb-6">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                     Filter by Staff
@@ -455,25 +580,8 @@ function Dashboard({ user }) {
                     ))}
                   </select>
                 </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Buffer Time
-                </label>
-                <select
-                  value={shop?.bufferMinutes || 0}
-                  onChange={(e) => updateBufferMinutes(e.target.value)}
-                  className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium"
-                >
-                  <option value="0">No buffer</option>
-                  <option value="5">5 minutes</option>
-                  <option value="10">10 minutes</option>
-                  <option value="15">15 minutes</option>
-                  <option value="30">30 minutes</option>
-                </select>
               </div>
-            </div>
+            )}
 
             {/* Weekly Hours Summary */}
             {staffWithHours.length > 0 && (
@@ -670,80 +778,163 @@ function Dashboard({ user }) {
 
               {/* Bookings List */}
               <div className="bg-white rounded-xl border border-slate-200 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-slate-900">
-                    {selectedDate ? 'Bookings' : 'All Bookings'}
-                  </h2>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900">
+                      {selectedDate ? 'Bookings' : 'All Bookings'}
+                    </h2>
+                    {statusCounts.pending > 0 && (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold rounded-full">
+                        {statusCounts.pending} pending
+                      </span>
+                    )}
+                  </div>
                   <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
-                    {filteredBookings.length}
+                    {displayedBookings.length}
                   </span>
                 </div>
-                {filteredBookings.length === 0 ? (
+
+                {/* Status Filter Tabs */}
+                <div className="flex items-center gap-1 mb-4 p-1 bg-slate-100 rounded-lg overflow-x-auto">
+                  {[
+                    { key: 'all', label: 'All' },
+                    { key: 'pending', label: 'Pending' },
+                    { key: 'confirmed', label: 'Confirmed' },
+                    { key: 'cancelled', label: 'Cancelled' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setStatusFilter(tab.key)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
+                        statusFilter === tab.key
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {tab.label}
+                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none ${
+                        statusFilter === tab.key
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-slate-200 text-slate-500'
+                      }`}>
+                        {statusCounts[tab.key]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {displayedBookings.length === 0 ? (
                   <div className="text-center py-12">
                     <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
                       <CalendarDays className="w-6 h-6 text-slate-400" />
                     </div>
                     <p className="text-sm text-slate-500 font-medium">
-                      {selectedDate ? 'No bookings for this date' : 'No bookings yet'}
+                      {statusFilter !== 'all'
+                        ? `No ${statusFilter} bookings`
+                        : selectedDate
+                          ? 'No bookings for this date'
+                          : 'No bookings yet'}
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-                    {filteredBookings
+                    {displayedBookings
                       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))
-                      .map(booking => (
-                      <div key={booking.id} className="group border border-slate-200 rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                              <User className="w-4 h-4 text-blue-600" />
+                      .map(booking => {
+                        const status = booking.status || 'confirmed'
+                        const statusStyles = {
+                          pending: 'bg-amber-50 text-amber-700 border-amber-200',
+                          confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                          rejected: 'bg-red-50 text-red-700 border-red-200',
+                          cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
+                        }
+                        const statusLabels = {
+                          pending: 'Pending',
+                          confirmed: 'Confirmed',
+                          rejected: 'Rejected',
+                          cancelled: 'Cancelled',
+                        }
+                        return (
+                          <div key={booking.id} className="group border border-slate-200 rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                  <User className="w-4 h-4 text-blue-600" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-slate-900 text-sm">{booking.clientName}</span>
+                                    <span className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-md border ${statusStyles[status]}`}>
+                                      {statusLabels[status]}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-slate-500">
+                                    {formatDateTime(booking.date, booking.time)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {status === 'pending' && (
+                                  <>
+                                    <button
+                                      onClick={() => approveBooking(booking.id)}
+                                      className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
+                                      title="Approve booking"
+                                    >
+                                      <Check className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => rejectBooking(booking.id)}
+                                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                      title="Reject booking"
+                                    >
+                                      <XCircle className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                )}
+                                {status === 'confirmed' && (
+                                  <button
+                                    onClick={() => cancelBooking(booking.id)}
+                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                    title="Cancel booking"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <div className="font-semibold text-slate-900 text-sm">{booking.clientName}</div>
-                              <div className="text-xs text-slate-500">
-                                {formatDateTime(booking.date, booking.time)}
+                            <div className="ml-[46px] space-y-0.5 text-xs text-slate-500">
+                              {booking.serviceName && (
+                                <div className="flex items-center gap-1.5">
+                                  <Tag className="w-3 h-3 text-blue-400" />
+                                  <span className="font-medium text-slate-700">{booking.serviceName}</span>
+                                  {booking.servicePrice != null && (
+                                    <span className="text-blue-600 font-semibold">
+                                      ${Number(booking.servicePrice).toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              {booking.staffName && (
+                                <div className="flex items-center gap-1.5">
+                                  <Users className="w-3 h-3 text-violet-400" />
+                                  <span className="text-violet-600">{booking.staffName}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <Mail className="w-3 h-3" />
+                                  {booking.clientEmail}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Phone className="w-3 h-3" />
+                                  {booking.clientPhone}
+                                </span>
                               </div>
                             </div>
                           </div>
-                          <button
-                            onClick={() => cancelBooking(booking.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                            title="Cancel booking"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="ml-[46px] space-y-0.5 text-xs text-slate-500">
-                          {booking.serviceName && (
-                            <div className="flex items-center gap-1.5">
-                              <Tag className="w-3 h-3 text-blue-400" />
-                              <span className="font-medium text-slate-700">{booking.serviceName}</span>
-                              {booking.servicePrice != null && (
-                                <span className="text-blue-600 font-semibold">
-                                  ${Number(booking.servicePrice).toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {booking.staffName && (
-                            <div className="flex items-center gap-1.5">
-                              <Users className="w-3 h-3 text-violet-400" />
-                              <span className="text-violet-600">{booking.staffName}</span>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-3">
-                            <span className="flex items-center gap-1">
-                              <Mail className="w-3 h-3" />
-                              {booking.clientEmail}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Phone className="w-3 h-3" />
-                              {booking.clientPhone}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                        )
+                      })}
                   </div>
                 )}
               </div>

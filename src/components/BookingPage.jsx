@@ -277,6 +277,8 @@ function BookingPage() {
         bookingData.staffName = selectedSlot.staffName || ''
       }
 
+      bookingData.status = shop?.requireApproval ? 'pending' : 'confirmed'
+
       await addDoc(collection(db, 'shops', shopId, 'bookings'), bookingData)
 
       if (!selectedSlot.generated) {
@@ -291,7 +293,11 @@ function BookingPage() {
       setSelectedService(null)
       setSelectedDate(null)
       setSelectedStaff(staffMembers.length === 1 ? staffMembers[0] : null)
-      setConfirmationMessage('✅ Booking confirmed! You will receive a confirmation email shortly.')
+      if (shop?.requireApproval) {
+        setConfirmationMessage('⏳ Your booking request has been submitted! The shop will review and confirm it shortly.')
+      } else {
+        setConfirmationMessage('✅ Booking confirmed! You will receive a confirmation email shortly.')
+      }
     } catch (err) {
       console.error('Booking error:', err)
       setConfirmationMessage('❌ Something went wrong. Please try again.')
@@ -469,11 +475,7 @@ function BookingPage() {
 
         {/* ─── Confirmation Card ─── */}
         {confirmationMessage && (
-          <div className={`mb-8 animate-scale-in ${
-            confirmationMessage.startsWith('✅')
-              ? ''
-              : ''
-          }`}>
+          <div className="mb-8 animate-scale-in">
             {confirmationMessage.startsWith('✅') ? (
               <div className="bg-white rounded-2xl border border-emerald-200 shadow-lg shadow-emerald-100/50 p-8 text-center">
                 <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -484,6 +486,18 @@ function BookingPage() {
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700 font-medium">
                   <CalendarCheck className="w-4 h-4" />
                   Add to your calendar to remember
+                </div>
+              </div>
+            ) : confirmationMessage.startsWith('⏳') ? (
+              <div className="bg-white rounded-2xl border border-amber-200 shadow-lg shadow-amber-100/50 p-8 text-center">
+                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Clock className="w-8 h-8 text-amber-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-slate-900 mb-2">Request Submitted!</h3>
+                <p className="text-slate-600 mb-6">Your booking request has been submitted! The shop will review and confirm it shortly.</p>
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 font-medium">
+                  <Clock className="w-4 h-4" />
+                  You'll be notified once it's confirmed
                 </div>
               </div>
             ) : (

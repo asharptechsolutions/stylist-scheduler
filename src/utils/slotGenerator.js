@@ -139,11 +139,14 @@ export function generateAllSlots(staffMembers, serviceDuration, bufferMinutes = 
  * @returns {Array} Slots with no booking conflicts
  */
 export function filterBookedSlots(slots, bookings, bufferMinutes = 0) {
+  // Only consider active bookings (pending or confirmed) for conflict detection
+  const activeBookings = bookings.filter(b => !b.status || b.status === 'pending' || b.status === 'confirmed')
+
   return slots.filter((slot) => {
     const slotStart = timeToMinutes(slot.time)
     const slotEnd = slotStart + slot.duration
 
-    const hasConflict = bookings.some((booking) => {
+    const hasConflict = activeBookings.some((booking) => {
       // Must be same staff (or unassigned)
       if (slot.staffId && booking.staffId && booking.staffId !== slot.staffId) return false
       if (booking.date !== slot.date) return false
