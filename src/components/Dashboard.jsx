@@ -3,11 +3,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
 import AnalyticsTab from './AnalyticsTab'
+import WalkInsTab from './WalkInsTab'
 import { findMatchingEntries } from '../utils/waitlistMatcher'
 
 const DAY_LABELS = [
@@ -40,6 +41,7 @@ function Dashboard({ user }) {
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
   const [staff, setStaff] = useState([])
+  const [services, setServices] = useState([])
   const [activeTab, setActiveTab] = useState('schedule')
   const [selectedDate, setSelectedDate] = useState(null)
   const [staffFilter, setStaffFilter] = useState('all')
@@ -137,11 +139,23 @@ function Dashboard({ user }) {
       }
     )
 
+    const unsubServices = onSnapshot(
+      collection(db, 'shops', shopId, 'services'),
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((s) => s.active !== false)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        setServices(items)
+      }
+    )
+
     return () => {
       unsubAvailability()
       unsubBookings()
       unsubStaff()
       unsubWaitlist()
+      unsubServices()
     }
   }, [shopId])
 
@@ -430,6 +444,21 @@ function Dashboard({ user }) {
     return waitlist.filter(w => w.status === 'waiting').length
   }, [waitlist])
 
+  const [walkinsCount, setWalkinsCount] = useState(0)
+
+  // Listen to walkins count for tab badge
+  useEffect(() => {
+    if (!shopId) return
+    const unsub = onSnapshot(
+      collection(db, 'shops', shopId, 'walkins'),
+      (snapshot) => {
+        const count = snapshot.docs.filter(d => d.data().status === 'waiting').length
+        setWalkinsCount(count)
+      }
+    )
+    return () => unsub()
+  }, [shopId])
+
   if (shopLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -509,6 +538,7 @@ function Dashboard({ user }) {
 
   const tabs = [
     { key: 'schedule', label: 'Schedule', icon: Calendar },
+    { key: 'walkins', label: 'Walk-ins', icon: UserPlus },
     { key: 'analytics', label: 'Analytics', icon: PieChart },
     { key: 'waitlist', label: 'Waitlist', icon: ListOrdered },
     { key: 'staff', label: 'Staff', icon: Users },
@@ -552,6 +582,11 @@ function Dashboard({ user }) {
                     {tab.key === 'schedule' && pendingCount > 0 && (
                       <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full leading-none">
                         {pendingCount}
+                      </span>
+                    )}
+                    {tab.key === 'walkins' && walkinsCount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-emerald-500 text-white text-[10px] font-bold rounded-full leading-none">
+                        {walkinsCount}
                       </span>
                     )}
                     {tab.key === 'waitlist' && waitlistWaitingCount > 0 && (
@@ -609,6 +644,11 @@ function Dashboard({ user }) {
               )
             })}
           </div>
+        )}
+
+        {/* Walk-ins Tab */}
+        {activeTab === 'walkins' && (
+          <WalkInsTab shopId={shopId} services={services} staff={staff} bookings={bookings} />
         )}
 
         {/* Analytics Tab */}
