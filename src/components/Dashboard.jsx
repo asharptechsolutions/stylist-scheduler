@@ -3,10 +3,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
+import AnalyticsTab from './AnalyticsTab'
 import { findMatchingEntries } from '../utils/waitlistMatcher'
 
 const DAY_LABELS = [
@@ -508,6 +509,7 @@ function Dashboard({ user }) {
 
   const tabs = [
     { key: 'schedule', label: 'Schedule', icon: Calendar },
+    { key: 'analytics', label: 'Analytics', icon: PieChart },
     { key: 'waitlist', label: 'Waitlist', icon: ListOrdered },
     { key: 'staff', label: 'Staff', icon: Users },
     { key: 'services', label: 'Services', icon: Tag },
@@ -607,6 +609,11 @@ function Dashboard({ user }) {
               )
             })}
           </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <AnalyticsTab bookings={bookings} />
         )}
 
         {/* Staff Tab */}
