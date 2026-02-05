@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================
+    // SHOPS
+    // ========================================
+    match /shops/{shopId} {
+      // Anyone can read shop info (needed for booking page)
+      allow read: if true;
+      
+      // Only the shop owner can update their shop
+      allow update: if request.auth != null && request.auth.uid == resource.data.ownerUid;
+      
+      // Any authenticated user can create a shop (registration)
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerUid;
+      
+      // Only the shop owner can delete their shop
+      allow delete: if request.auth != null && request.auth.uid == resource.data.ownerUid;
+      
+      // ========================================
+      // SERVICES
+      // ========================================
+      match /services/{serviceId} {
+        // Anyone can read services (booking page needs this)
+        allow read: if true;
+        
+        // Only the shop owner can manage services
+        allow create, update, delete: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+      }
+      
+      // ========================================
+      // STAFF
+      // ========================================
+      match /staff/{staffId} {
+        // Anyone can read staff (booking page needs this)
+        allow read: if true;
+        
+        // Only the shop owner can manage staff
+        allow create, update, delete: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+      }
+      
+      // ========================================
+      // AVAILABILITY
+      // ========================================
+      match /availability/{slotId} {
+        // Anyone can read availability (booking page needs this)
+        allow read: if true;
+        
+        // Only the shop owner can create/delete slots
+        allow create, delete: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        
+        // Owner can update anything; booking page can only mark a slot as unavailable
+        allow update: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid
+          || (request.resource.data.available == false && resource.data.available == true);
+      }
+      
+      // ========================================
+      // BOOKINGS
+      // ========================================
+      match /bookings/{bookingId} {
+        // Anyone can read bookings (needed to check availability)
+        // In production, you may want to restrict this to owner-only reads
+        allow read: if true;
+        
+        // Anyone can create a booking (clients booking appointments)
+        allow create: if true;
+        
+        // Only the shop owner can update or cancel bookings
+        allow update, delete: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+      }
+    }
+    
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

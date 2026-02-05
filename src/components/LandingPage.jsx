@@ -23,6 +23,12 @@ function LandingPage() {
           <Logo />
           <div className="flex items-center gap-3">
             <Link
+              to="/login"
+              className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              Sign In
+            </Link>
+            <Link
               to="/register"
               className="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-all hover:shadow-lg hover:shadow-blue-600/25 hover:-translate-y-0.5"
             >
@@ -384,6 +390,8 @@ function LandingPage() {
             <Logo />
             <div className="flex items-center gap-6 text-sm text-slate-500">
               <Link to="/register" className="hover:text-slate-900 transition-colors">Sign Up</Link>
+              <span className="text-slate-200">·</span>
+              <Link to="/login" className="hover:text-slate-900 transition-colors">Sign In</Link>
               <span className="text-slate-200">·</span>
               <a href="#how-it-works" className="hover:text-slate-900 transition-colors">How It Works</a>
             </div>

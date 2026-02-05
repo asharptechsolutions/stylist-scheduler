@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from './firebase'
 import LandingPage from './components/LandingPage'
 import Register from './components/Register'
+import SignIn from './components/SignIn'
 import BookingPage from './components/BookingPage'
 import Dashboard from './components/Dashboard'
 import Login from './components/Login'
@@ -36,6 +37,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/login" element={<SignIn user={user} />} />
         <Route path="/shop/:slug" element={<BookingPage />} />
         <Route path="/shop/:slug/login" element={<Login user={user} />} />
         <Route

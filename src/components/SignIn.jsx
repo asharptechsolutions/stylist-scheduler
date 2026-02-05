@@ -1,86 +1,70 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'
+import { signInWithEmailAndPassword } from 'firebase/auth'
+import { collection, query, where, getDocs } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import { ArrowLeft, Scissors, ArrowRight } from 'lucide-react'
 
-function generateSlug(name) {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
-function Register() {
+function SignIn({ user }) {
   const navigate = useNavigate()
-  const [shopName, setShopName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const slug = generateSlug(shopName)
+  // If already logged in, find their shop and redirect
+  useState(() => {
+    if (!user) return
+    const findShop = async () => {
+      const q = query(collection(db, 'shops'), where('ownerUid', '==', user.uid))
+      const snapshot = await getDocs(q)
+      if (!snapshot.empty) {
+        const shopData = snapshot.docs[0].data()
+        navigate(`/shop/${shopData.slug}/dashboard`, { replace: true })
+      }
+    }
+    findShop()
+  }, [user, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-
-    if (!slug) {
-      setError('Please enter a valid shop name')
-      return
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
-      return
-    }
-
     setLoading(true)
 
     try {
-      // Check slug uniqueness
-      const slugQuery = query(collection(db, 'shops'), where('slug', '==', slug))
-      const slugSnapshot = await getDocs(slugQuery)
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      const signedInUser = userCredential.user
 
-      if (!slugSnapshot.empty) {
-        setError('A shop with that name already exists. Please choose a different name.')
+      // Find the shop owned by this user
+      const q = query(collection(db, 'shops'), where('ownerUid', '==', signedInUser.uid))
+      const snapshot = await getDocs(q)
+
+      if (snapshot.empty) {
+        setError("No shop found for this account. Need to create one?")
+        await auth.signOut()
         setLoading(false)
         return
       }
 
-      // Create Firebase Auth account
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
-
-      // Create shop document
-      await addDoc(collection(db, 'shops'), {
-        name: shopName.trim(),
-        slug,
-        ownerUid: user.uid,
-        ownerEmail: email,
-        createdAt: serverTimestamp()
-      })
-
-      // Redirect to dashboard
-      navigate(`/shop/${slug}/dashboard`)
+      const shopData = snapshot.docs[0].data()
+      navigate(`/shop/${shopData.slug}/dashboard`, { replace: true })
     } catch (err) {
       switch (err.code) {
-        case 'auth/email-already-in-use':
-          setError('An account with this email already exists')
+        case 'auth/invalid-credential':
+        case 'auth/wrong-password':
+        case 'auth/user-not-found':
+          setError('Invalid email or password')
           break
         case 'auth/invalid-email':
           setError('Please enter a valid email address')
           break
-        case 'auth/weak-password':
-          setError('Password must be at least 6 characters')
+        case 'auth/too-many-requests':
+          setError('Too many failed attempts. Please try again later.')
           break
         default:
-          setError('Registration failed. Please try again.')
+          setError('Login failed. Please try again.')
       }
+      setPassword('')
     } finally {
       setLoading(false)
     }
@@ -104,34 +88,11 @@ function Register() {
         {/* Card */}
         <div className="bg-white rounded-2xl p-8 shadow-lg shadow-slate-200/50 border border-slate-200">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-slate-900 mb-1">Create your shop</h1>
-            <p className="text-sm text-slate-500">Set up your booking page in seconds — it's free</p>
+            <h1 className="text-2xl font-bold text-slate-900 mb-1">Welcome back</h1>
+            <p className="text-sm text-slate-500">Sign in to manage your shop</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                Shop Name
-              </label>
-              <input
-                type="text"
-                value={shopName}
-                onChange={(e) => {
-                  setShopName(e.target.value)
-                  setError('')
-                }}
-                placeholder="Jane's Salon"
-                required
-                autoFocus
-                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
-              />
-              {slug && (
-                <p className="mt-1.5 text-xs text-slate-400">
-                  Your page: <span className="font-mono text-blue-600 font-medium">bookflow.app/shop/{slug}</span>
-                </p>
-              )}
-            </div>
-
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                 Email
@@ -145,6 +106,7 @@ function Register() {
                 }}
                 placeholder="you@example.com"
                 required
+                autoFocus
                 className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
               />
             </div>
@@ -160,7 +122,7 @@ function Register() {
                   setPassword(e.target.value)
                   setError('')
                 }}
-                placeholder="At least 6 characters"
+                placeholder="Enter password"
                 required
                 className={`w-full px-4 py-3 bg-white border rounded-xl focus:outline-none focus:ring-2 transition-all text-sm ${
                   error
@@ -183,11 +145,11 @@ function Register() {
               {loading ? (
                 <>
                   <div className="spinner-sm border-white/30 border-t-white" />
-                  Creating your shop…
+                  Signing in…
                 </>
               ) : (
                 <>
-                  Create Shop
+                  Sign In
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -196,9 +158,9 @@ function Register() {
 
           <div className="mt-5 pt-5 border-t border-slate-100 text-center">
             <p className="text-sm text-slate-500">
-              Already have an account?{' '}
-              <Link to="/login" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors">
-                Sign in
+              Don't have an account?{' '}
+              <Link to="/register" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors">
+                Create one
               </Link>
             </p>
           </div>
@@ -219,4 +181,4 @@ function Register() {
   )
 }
 
-export default Register
+export default SignIn
