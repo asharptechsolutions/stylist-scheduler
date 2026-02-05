@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -45,6 +45,7 @@ function Dashboard({ user }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [waitlist, setWaitlist] = useState([])
   const [waitlistAlert, setWaitlistAlert] = useState(null) // { matches, slot }
+  const [recurringCancelModal, setRecurringCancelModal] = useState(null) // { bookingId, recurringGroupId }
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
@@ -237,11 +238,17 @@ function Dashboard({ user }) {
   const cancelBooking = async (bookingId) => {
     const booking = bookings.find(b => b.id === bookingId)
 
+    // If it's a recurring booking, show modal for choice
+    if (booking && booking.recurringGroupId) {
+      setRecurringCancelModal({ bookingId, recurringGroupId: booking.recurringGroupId })
+      return
+    }
+
     await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
       status: 'cancelled'
     })
 
-    if (booking && booking.slotId && !booking.slotId.startsWith('wh-')) {
+    if (booking && booking.slotId && !booking.slotId.startsWith('wh-') && !booking.slotId.startsWith('recurring-')) {
       try {
         await updateDoc(doc(db, 'shops', shopId, 'availability', booking.slotId), {
           available: true
@@ -252,6 +259,58 @@ function Dashboard({ user }) {
     }
 
     if (booking) checkWaitlistMatches(booking)
+  }
+
+  const cancelRecurringSingle = async (bookingId) => {
+    const booking = bookings.find(b => b.id === bookingId)
+
+    await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
+      status: 'cancelled'
+    })
+
+    if (booking && booking.slotId && !booking.slotId.startsWith('wh-') && !booking.slotId.startsWith('recurring-')) {
+      try {
+        await updateDoc(doc(db, 'shops', shopId, 'availability', booking.slotId), {
+          available: true
+        })
+      } catch (err) {
+        console.warn('Could not re-open slot:', err)
+      }
+    }
+
+    if (booking) checkWaitlistMatches(booking)
+    setRecurringCancelModal(null)
+  }
+
+  const cancelRecurringFuture = async (bookingId, recurringGroupId) => {
+    const booking = bookings.find(b => b.id === bookingId)
+    if (!booking) return
+
+    // Cancel this and all future bookings in the series
+    const futureBookings = bookings.filter((b) =>
+      b.recurringGroupId === recurringGroupId &&
+      b.date >= booking.date &&
+      (b.status === 'pending' || b.status === 'confirmed')
+    )
+
+    for (const fb of futureBookings) {
+      await updateDoc(doc(db, 'shops', shopId, 'bookings', fb.id), {
+        status: 'cancelled'
+      })
+
+      if (fb.slotId && !fb.slotId.startsWith('wh-') && !fb.slotId.startsWith('recurring-')) {
+        try {
+          await updateDoc(doc(db, 'shops', shopId, 'availability', fb.slotId), {
+            available: true
+          })
+        } catch (err) {
+          console.warn('Could not re-open slot:', err)
+        }
+      }
+    }
+
+    if (booking) checkWaitlistMatches(booking)
+    setRecurringCancelModal(null)
   }
 
   const approveBooking = async (bookingId) => {
@@ -621,6 +680,53 @@ function Dashboard({ user }) {
                   Dismiss
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Recurring Cancel Modal */}
+        {recurringCancelModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                  <Repeat className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Cancel Recurring Booking</h3>
+                  <p className="text-sm text-slate-500">This booking is part of a recurring series</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-5">
+                <button
+                  onClick={() => cancelRecurringSingle(recurringCancelModal.bookingId)}
+                  className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-red-50 border border-slate-200 hover:border-red-300 rounded-xl text-left transition-all"
+                >
+                  <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                  <div>
+                    <span className="text-sm font-semibold text-slate-900">Cancel this one only</span>
+                    <p className="text-xs text-slate-500">Other appointments stay active</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => cancelRecurringFuture(recurringCancelModal.bookingId, recurringCancelModal.recurringGroupId)}
+                  className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-red-50 border border-slate-200 hover:border-red-300 rounded-xl text-left transition-all"
+                >
+                  <Repeat className="w-5 h-5 text-red-500 flex-shrink-0" />
+                  <div>
+                    <span className="text-sm font-semibold text-slate-900">Cancel all future in series</span>
+                    <p className="text-xs text-slate-500">Cancel this and all later appointments</p>
+                  </div>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setRecurringCancelModal(null)}
+                className="w-full px-5 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold text-sm transition-all border border-slate-200"
+              >
+                Never mind
+              </button>
             </div>
           </div>
         )}
@@ -1282,13 +1388,18 @@ function Dashboard({ user }) {
                                   {booking.clientPhone}
                                 </span>
                               </div>
-                              {booking.refCode && (
-                                <div className="mt-0.5">
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {booking.refCode && (
                                   <span className="font-mono text-[10px] text-slate-400">
                                     REF: {booking.refCode}
                                   </span>
-                                </div>
-                              )}
+                                )}
+                                {booking.recurring && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 border border-indigo-200 rounded text-[10px] font-semibold text-indigo-600">
+                                    🔄 Recurring
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )

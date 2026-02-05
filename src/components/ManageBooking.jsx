@@ -4,7 +4,7 @@ import { collection, query, where, getDocs, onSnapshot, doc, updateDoc } from 'f
 import { db } from '../firebase'
 import {
   Calendar as CalendarIcon, Clock, CheckCircle, ArrowLeft, Tag, Users,
-  Scissors, XCircle, CalendarCheck, RefreshCw, AlertTriangle, PartyPopper, Copy, ExternalLink
+  Scissors, XCircle, CalendarCheck, RefreshCw, AlertTriangle, PartyPopper, Copy, ExternalLink, Repeat
 } from 'lucide-react'
 import Calendar from './Calendar'
 import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
@@ -60,6 +60,7 @@ function ManageBooking() {
   // UI state
   const [showReschedule, setShowReschedule] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelMode, setCancelMode] = useState(null) // 'single' | 'future'
   const [selectedDate, setSelectedDate] = useState(null)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -234,16 +235,17 @@ function ManageBooking() {
     [selectedDate, compatibleSlots]
   )
 
-  // ── Cancel ──
-  const handleCancel = async () => {
+  // ── Cancel (supports single or all-future for recurring series) ──
+  const handleCancel = async (mode = 'single') => {
     setSubmitting(true)
     try {
+      // Cancel this booking
       await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
         status: 'cancelled',
       })
 
       // Re-open manual slot if applicable
-      if (booking.slotId && !booking.slotId.startsWith('wh-')) {
+      if (booking.slotId && !booking.slotId.startsWith('wh-') && !booking.slotId.startsWith('recurring-')) {
         try {
           await updateDoc(doc(db, 'shops', shopId, 'availability', booking.slotId), {
             available: true,
@@ -253,8 +255,35 @@ function ManageBooking() {
         }
       }
 
+      // If cancelling all future in a recurring series
+      if (mode === 'future' && booking.recurringGroupId) {
+        const futureBookings = allBookings.filter((b) =>
+          b.recurringGroupId === booking.recurringGroupId &&
+          b.id !== bookingId &&
+          b.date >= booking.date &&
+          (b.status === 'pending' || b.status === 'confirmed')
+        )
+
+        for (const fb of futureBookings) {
+          await updateDoc(doc(db, 'shops', shopId, 'bookings', fb.id), {
+            status: 'cancelled',
+          })
+          // Re-open manual slot if applicable
+          if (fb.slotId && !fb.slotId.startsWith('wh-') && !fb.slotId.startsWith('recurring-')) {
+            try {
+              await updateDoc(doc(db, 'shops', shopId, 'availability', fb.slotId), {
+                available: true,
+              })
+            } catch (err) {
+              console.warn('Could not re-open slot:', err)
+            }
+          }
+        }
+      }
+
       setBooking((prev) => ({ ...prev, status: 'cancelled' }))
       setShowCancelConfirm(false)
+      setCancelMode(null)
       setActionMessage('cancelled')
     } catch (err) {
       console.error('Cancel error:', err)
@@ -550,6 +579,27 @@ function ManageBooking() {
               </div>
             )}
 
+            {/* Recurring series indicator */}
+            {booking.recurringGroupId && (
+              <div className="mb-4 p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2.5">
+                <Repeat className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <div>
+                  <span className="text-sm font-semibold text-blue-800">Part of a recurring series</span>
+                  {booking.recurringInterval && (
+                    <p className="text-xs text-blue-600 mt-0.5">
+                      Repeats every {
+                        booking.recurringInterval === 'weekly' ? 'week' :
+                        booking.recurringInterval === 'biweekly' ? '2 weeks' :
+                        booking.recurringInterval === 'fourweekly' ? '4 weeks' :
+                        booking.recurringInterval === 'monthly' ? 'month' :
+                        booking.recurringInterval
+                      }
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Details card */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6 space-y-3">
               {/* Status badge */}
@@ -619,7 +669,10 @@ function ManageBooking() {
                       Reschedule Booking
                     </button>
                     <button
-                      onClick={() => setShowCancelConfirm(true)}
+                      onClick={() => {
+                        setShowCancelConfirm(true)
+                        setCancelMode(null)
+                      }}
                       className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-white hover:bg-red-50 text-red-600 rounded-xl font-semibold border border-red-200 hover:border-red-300 transition-all"
                     >
                       <XCircle className="w-4 h-4" />
@@ -637,27 +690,73 @@ function ManageBooking() {
                         <p className="text-sm text-slate-600">This action cannot be undone.</p>
                       </div>
                     </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={handleCancel}
-                        disabled={submitting}
-                        className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-all disabled:opacity-50"
-                      >
-                        {submitting ? (
-                          <div className="spinner-sm border-white/30 border-t-white" />
-                        ) : (
-                          <XCircle className="w-4 h-4" />
-                        )}
-                        {submitting ? 'Cancelling…' : 'Yes, Cancel'}
-                      </button>
-                      <button
-                        onClick={() => setShowCancelConfirm(false)}
-                        disabled={submitting}
-                        className="px-5 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
-                      >
-                        Go Back
-                      </button>
-                    </div>
+
+                    {/* Recurring series: choose cancel mode */}
+                    {booking.recurringGroupId && !cancelMode && (
+                      <div className="space-y-2 mb-4">
+                        <button
+                          onClick={() => setCancelMode('single')}
+                          className="w-full flex items-center gap-3 p-3 bg-white hover:bg-slate-50 border border-slate-200 hover:border-red-300 rounded-xl text-left transition-all"
+                        >
+                          <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                          <div>
+                            <span className="text-sm font-semibold text-slate-900">Cancel this appointment only</span>
+                            <p className="text-xs text-slate-500">Other appointments in the series remain active</p>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => setCancelMode('future')}
+                          className="w-full flex items-center gap-3 p-3 bg-white hover:bg-slate-50 border border-slate-200 hover:border-red-300 rounded-xl text-left transition-all"
+                        >
+                          <Repeat className="w-5 h-5 text-red-500 flex-shrink-0" />
+                          <div>
+                            <span className="text-sm font-semibold text-slate-900">Cancel all future appointments</span>
+                            <p className="text-xs text-slate-500">Cancel this and all later appointments in the series</p>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => setShowCancelConfirm(false)}
+                          className="w-full px-5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold text-sm transition-all border border-slate-200"
+                        >
+                          Go Back
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Confirm cancel (non-recurring, or after choosing mode) */}
+                    {(!booking.recurringGroupId || cancelMode) && (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => handleCancel(cancelMode || 'single')}
+                          disabled={submitting}
+                          className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-all disabled:opacity-50"
+                        >
+                          {submitting ? (
+                            <div className="spinner-sm border-white/30 border-t-white" />
+                          ) : (
+                            <XCircle className="w-4 h-4" />
+                          )}
+                          {submitting
+                            ? 'Cancelling…'
+                            : cancelMode === 'future'
+                              ? 'Cancel All Future'
+                              : 'Yes, Cancel'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (cancelMode) {
+                              setCancelMode(null)
+                            } else {
+                              setShowCancelConfirm(false)
+                            }
+                          }}
+                          disabled={submitting}
+                          className="px-5 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
+                        >
+                          Go Back
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
