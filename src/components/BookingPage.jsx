@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat, X, Image, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat } from 'lucide-react'
 import Calendar from './Calendar'
 import WaitlistForm from './WaitlistForm'
 import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
@@ -208,6 +208,11 @@ function BookingPage() {
   const [lastRefCode, setLastRefCode] = useState('')
   const [showWaitlistForm, setShowWaitlistForm] = useState(false)
   const [portfolioModalMember, setPortfolioModalMember] = useState(null)
+
+  // Recurring appointment state
+  const [recurringEnabled, setRecurringEnabled] = useState(false)
+  const [recurringInterval, setRecurringInterval] = useState('biweekly')
+  const [recurringResult, setRecurringResult] = useState(null) // { created, skipped } after booking
 
   // Recurring appointment state
   const [recurringEnabled, setRecurringEnabled] = useState(false)
