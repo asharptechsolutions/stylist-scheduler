@@ -931,6 +931,13 @@ function Dashboard({ user }) {
                                   {booking.clientPhone}
                                 </span>
                               </div>
+                              {booking.refCode && (
+                                <div className="mt-0.5">
+                                  <span className="font-mono text-[10px] text-slate-400">
+                                    REF: {booking.refCode}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )

@@ -59,6 +59,7 @@ function BookingPage() {
     email: '',
     phone: ''
   })
+  const [lastRefCode, setLastRefCode] = useState('')
 
   // Look up shop by slug
   useEffect(() => {
@@ -246,11 +247,21 @@ function BookingPage() {
     setConfirmationMessage('')
   }
 
+  const generateRefCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    let code = 'BK'
+    for (let i = 0; i < 4; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return code
+  }
+
   const confirmBooking = async (e) => {
     e.preventDefault()
     setSubmitting(true)
 
     try {
+      const refCode = generateRefCode()
       const bookingData = {
         slotId: selectedSlot.id,
         date: selectedSlot.date,
@@ -278,6 +289,7 @@ function BookingPage() {
       }
 
       bookingData.status = shop?.requireApproval ? 'pending' : 'confirmed'
+      bookingData.refCode = refCode
 
       await addDoc(collection(db, 'shops', shopId, 'bookings'), bookingData)
 
@@ -293,6 +305,7 @@ function BookingPage() {
       setSelectedService(null)
       setSelectedDate(null)
       setSelectedStaff(staffMembers.length === 1 ? staffMembers[0] : null)
+      setLastRefCode(refCode)
       if (shop?.requireApproval) {
         setConfirmationMessage('⏳ Your booking request has been submitted! The shop will review and confirm it shortly.')
       } else {
@@ -482,7 +495,25 @@ function BookingPage() {
                   <PartyPopper className="w-8 h-8 text-emerald-600" />
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 mb-2">Booking Confirmed!</h3>
-                <p className="text-slate-600 mb-6">You're all set. We'll send a confirmation to your email.</p>
+                <p className="text-slate-600 mb-4">You're all set. We'll send a confirmation to your email.</p>
+                {lastRefCode && (
+                  <div className="mb-4">
+                    <p className="text-sm text-slate-500 mb-1">Your reference</p>
+                    <p className="text-2xl font-mono font-extrabold text-blue-600 tracking-wider">{lastRefCode}</p>
+                  </div>
+                )}
+                {lastRefCode && (
+                  <div className="mb-4">
+                    <Link
+                      to={`/shop/${slug}/booking/${lastRefCode}`}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-all shadow-md shadow-blue-600/20 hover:shadow-lg"
+                    >
+                      <CalendarCheck className="w-4 h-4" />
+                      Manage Your Booking
+                    </Link>
+                    <p className="text-xs text-slate-400 mt-2">Save this link to reschedule or cancel your booking</p>
+                  </div>
+                )}
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700 font-medium">
                   <CalendarCheck className="w-4 h-4" />
                   Add to your calendar to remember
@@ -494,7 +525,25 @@ function BookingPage() {
                   <Clock className="w-8 h-8 text-amber-600" />
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 mb-2">Request Submitted!</h3>
-                <p className="text-slate-600 mb-6">Your booking request has been submitted! The shop will review and confirm it shortly.</p>
+                <p className="text-slate-600 mb-4">Your booking request has been submitted! The shop will review and confirm it shortly.</p>
+                {lastRefCode && (
+                  <div className="mb-4">
+                    <p className="text-sm text-slate-500 mb-1">Your reference</p>
+                    <p className="text-2xl font-mono font-extrabold text-blue-600 tracking-wider">{lastRefCode}</p>
+                  </div>
+                )}
+                {lastRefCode && (
+                  <div className="mb-4">
+                    <Link
+                      to={`/shop/${slug}/booking/${lastRefCode}`}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-all shadow-md shadow-blue-600/20 hover:shadow-lg"
+                    >
+                      <CalendarCheck className="w-4 h-4" />
+                      Manage Your Booking
+                    </Link>
+                    <p className="text-xs text-slate-400 mt-2">Save this link to reschedule or cancel your booking</p>
+                  </div>
+                )}
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 font-medium">
                   <Clock className="w-4 h-4" />
                   You'll be notified once it's confirmed

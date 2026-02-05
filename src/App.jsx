@@ -8,6 +8,7 @@ import SignIn from './components/SignIn'
 import BookingPage from './components/BookingPage'
 import Dashboard from './components/Dashboard'
 import Login from './components/Login'
+import ManageBooking from './components/ManageBooking'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -39,6 +40,7 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<SignIn user={user} />} />
         <Route path="/shop/:slug" element={<BookingPage />} />
+        <Route path="/shop/:slug/booking/:refCode" element={<ManageBooking />} />
         <Route path="/shop/:slug/login" element={<Login user={user} />} />
         <Route
           path="/shop/:slug/dashboard"
