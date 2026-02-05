@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat, X, Image, ChevronLeft, ChevronRight } from 'lucide-react'
 import Calendar from './Calendar'
 import WaitlistForm from './WaitlistForm'
 import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
@@ -37,6 +37,151 @@ function BookFlowMark() {
   )
 }
 
+/* ── Staff Portfolio Modal ── */
+function StaffPortfolioModal({ member, onClose }) {
+  const [lightboxIndex, setLightboxIndex] = useState(null)
+  const portfolio = member.portfolio || []
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Escape') {
+        if (lightboxIndex !== null) {
+          setLightboxIndex(null)
+        } else {
+          onClose()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [lightboxIndex, onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-scale-in">
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 w-8 h-8 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-600 transition-all z-10"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        {/* Header */}
+        <div className="p-6 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-4">
+            <InitialsAvatar
+              name={member.name}
+              className="w-14 h-14"
+              bgClass="bg-violet-100 text-violet-700"
+            />
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">{member.name}</h3>
+              {member.role && (
+                <p className="text-sm text-violet-600 font-medium">{member.role}</p>
+              )}
+            </div>
+          </div>
+          {member.bio && (
+            <p className="mt-3 text-sm text-slate-600 leading-relaxed">{member.bio}</p>
+          )}
+        </div>
+
+        {/* Portfolio Grid */}
+        <div className="p-6">
+          {portfolio.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                <Image className="w-6 h-6 text-slate-400" />
+              </div>
+              <p className="text-sm text-slate-500">No portfolio photos yet</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {portfolio.map((photo, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setLightboxIndex(idx)}
+                  className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5"
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.caption || 'Portfolio'}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  {photo.caption && (
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2.5 pt-6">
+                      <p className="text-xs text-white font-medium truncate">
+                        {photo.caption}
+                      </p>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && portfolio[lightboxIndex] && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90">
+          <button
+            onClick={() => setLightboxIndex(null)}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-all"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {/* Previous */}
+          {lightboxIndex > 0 && (
+            <button
+              onClick={() => setLightboxIndex(lightboxIndex - 1)}
+              className="absolute left-4 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-all"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Next */}
+          {lightboxIndex < portfolio.length - 1 && (
+            <button
+              onClick={() => setLightboxIndex(lightboxIndex + 1)}
+              className="absolute right-4 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-all"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          )}
+
+          <div className="max-w-4xl max-h-[85vh] flex flex-col items-center">
+            <img
+              src={portfolio[lightboxIndex].url}
+              alt={portfolio[lightboxIndex].caption || 'Portfolio'}
+              className="max-w-full max-h-[75vh] object-contain rounded-lg"
+            />
+            {portfolio[lightboxIndex].caption && (
+              <p className="mt-3 text-sm text-white/90 font-medium text-center px-4">
+                {portfolio[lightboxIndex].caption}
+              </p>
+            )}
+            <p className="mt-1 text-xs text-white/50">
+              {lightboxIndex + 1} / {portfolio.length}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BookingPage() {
   const { slug } = useParams()
   const [shop, setShop] = useState(null)
@@ -62,6 +207,7 @@ function BookingPage() {
   })
   const [lastRefCode, setLastRefCode] = useState('')
   const [showWaitlistForm, setShowWaitlistForm] = useState(false)
+  const [portfolioModalMember, setPortfolioModalMember] = useState(null)
 
   // Recurring appointment state
   const [recurringEnabled, setRecurringEnabled] = useState(false)
@@ -826,28 +972,71 @@ function BookingPage() {
               </button>
 
               {/* Staff member cards */}
-              {staffMembers.map((member) => (
-                <button
-                  key={member.id}
-                  onClick={() => handleSelectStaff(member)}
-                  className="group text-left bg-white border border-slate-200 hover:border-blue-300 rounded-xl p-5 transition-all duration-200 hover:shadow-lg hover:shadow-slate-200/50 hover:-translate-y-0.5"
-                >
-                  <div className="flex items-center gap-3.5 mb-3">
-                    <InitialsAvatar name={member.name} />
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
-                        {member.name}
-                      </h3>
-                      {member.role && (
-                        <p className="text-xs text-slate-500">{member.role}</p>
+              {staffMembers.map((member) => {
+                const portfolio = member.portfolio || []
+                return (
+                  <div
+                    key={member.id}
+                    className="group bg-white border border-slate-200 hover:border-blue-300 rounded-xl p-5 transition-all duration-200 hover:shadow-lg hover:shadow-slate-200/50 hover:-translate-y-0.5"
+                  >
+                    <button
+                      onClick={() => handleSelectStaff(member)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex items-center gap-3.5 mb-2">
+                        <InitialsAvatar name={member.name} />
+                        <div className="min-w-0">
+                          <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
+                            {member.name}
+                          </h3>
+                          {member.role && (
+                            <p className="text-xs text-slate-500">{member.role}</p>
+                          )}
+                        </div>
+                      </div>
+                      {member.bio && (
+                        <p className="text-xs text-slate-500 leading-relaxed mb-2 line-clamp-2">
+                          {member.bio}
+                        </p>
                       )}
-                    </div>
+                      {/* Portfolio thumbnail previews */}
+                      {portfolio.length > 0 && (
+                        <div className="flex items-center gap-1.5 mb-2">
+                          {portfolio.slice(0, 3).map((photo, i) => (
+                            <img
+                              key={i}
+                              src={photo.url}
+                              alt={photo.caption || 'Work'}
+                              className="w-10 h-10 rounded-md object-cover border border-slate-200"
+                            />
+                          ))}
+                          {portfolio.length > 3 && (
+                            <span className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-xs text-slate-500 font-semibold">
+                              +{portfolio.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <span className="block text-center text-xs font-semibold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+                        Select →
+                      </span>
+                    </button>
+                    {/* View Portfolio link */}
+                    {portfolio.length > 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setPortfolioModalMember(member)
+                        }}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-violet-600 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all"
+                      >
+                        <Image className="w-3.5 h-3.5" />
+                        View Portfolio ({portfolio.length})
+                      </button>
+                    )}
                   </div>
-                  <span className="block text-center text-xs font-semibold text-blue-600 group-hover:translate-x-0.5 transition-transform">
-                    Select →
-                  </span>
-                </button>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -1211,6 +1400,14 @@ function BookingPage() {
           </div>
         )}
       </div>
+
+      {/* ─── Portfolio Modal ─── */}
+      {portfolioModalMember && (
+        <StaffPortfolioModal
+          member={portfolioModalMember}
+          onClose={() => setPortfolioModalMember(null)}
+        />
+      )}
 
       {/* ─── Footer ─── */}
       <footer className="border-t border-slate-200 mt-auto">
