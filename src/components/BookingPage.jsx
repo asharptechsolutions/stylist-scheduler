@@ -214,11 +214,6 @@ function BookingPage() {
   const [recurringInterval, setRecurringInterval] = useState('biweekly')
   const [recurringResult, setRecurringResult] = useState(null) // { created, skipped } after booking
 
-  // Recurring appointment state
-  const [recurringEnabled, setRecurringEnabled] = useState(false)
-  const [recurringInterval, setRecurringInterval] = useState('biweekly')
-  const [recurringResult, setRecurringResult] = useState(null) // { created, skipped } after booking
-
   // Look up shop by slug
   useEffect(() => {
     const lookupShop = async () => {
