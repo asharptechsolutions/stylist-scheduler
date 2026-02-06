@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { stripePromise } from '../stripe'
-import { CreditCard, Lock, CheckCircle, AlertCircle } from 'lucide-react'
+import { CreditCard, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+
+const FUNCTIONS_URL = 'https://us-central1-scheduler-65e51.cloudfunctions.net'
 
 const CARD_ELEMENT_OPTIONS = {
   style: {
@@ -20,7 +22,16 @@ const CARD_ELEMENT_OPTIONS = {
   },
 }
 
-function CheckoutForm({ amount, onSuccess, onCancel, clientInfo, serviceName }) {
+function CheckoutForm({ 
+  amount, 
+  onSuccess, 
+  onCancel, 
+  clientInfo, 
+  serviceName,
+  shopId,
+  bookingRefCode,
+  shopHasConnect = true
+}) {
   const stripe = useStripe()
   const elements = useElements()
   const [processing, setProcessing] = useState(false)
@@ -56,24 +67,69 @@ function CheckoutForm({ amount, onSuccess, onCancel, clientInfo, serviceName }) 
       return
     }
 
-    // In a real implementation, you would:
-    // 1. Send paymentMethod.id to your backend
-    // 2. Create a PaymentIntent on the backend with the secret key
-    // 3. Confirm the payment
-    
-    // For now, we'll simulate success since we don't have a backend
-    // The payment method was created successfully, which validates the card
-    console.log('Payment method created:', paymentMethod.id)
-    
-    // Simulate a brief processing delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    setProcessing(false)
-    onSuccess({
-      paymentMethodId: paymentMethod.id,
-      last4: paymentMethod.card.last4,
-      brand: paymentMethod.card.brand,
-    })
+    // If shop has Connect, use the cloud function for proper transfer
+    if (shopHasConnect && shopId) {
+      try {
+        const response = await fetch(`${FUNCTIONS_URL}/createDepositPaymentIntent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopId,
+            amount,
+            serviceName,
+            clientName: clientInfo.name,
+            clientEmail: clientInfo.email,
+            bookingRefCode,
+            paymentMethodId: paymentMethod.id,
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          // Check for specific error types
+          if (data.needsConnect) {
+            setError('This shop has not connected Stripe yet. Please contact the shop owner.')
+          } else if (data.needsOnboarding) {
+            setError('This shop is still setting up payments. Please try again later.')
+          } else {
+            setError(data.error || 'Payment failed. Please try again.')
+          }
+          setProcessing(false)
+          return
+        }
+
+        // Payment succeeded
+        console.log('Payment processed:', data.paymentIntentId)
+        
+        setProcessing(false)
+        onSuccess({
+          paymentMethodId: paymentMethod.id,
+          paymentIntentId: data.paymentIntentId,
+          last4: paymentMethod.card.last4,
+          brand: paymentMethod.card.brand,
+          amount: data.amount,
+        })
+      } catch (err) {
+        console.error('Payment error:', err)
+        setError('Payment failed. Please try again.')
+        setProcessing(false)
+      }
+    } else {
+      // Fallback: Just validate the card (for shops without Connect)
+      // In this case, we just save the payment method for later charging
+      console.log('Payment method created (no Connect):', paymentMethod.id)
+      
+      // Simulate a brief processing delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      setProcessing(false)
+      onSuccess({
+        paymentMethodId: paymentMethod.id,
+        last4: paymentMethod.card.last4,
+        brand: paymentMethod.card.brand,
+      })
+    }
   }
 
   const formatAmount = (cents) => {
@@ -149,7 +205,7 @@ function CheckoutForm({ amount, onSuccess, onCancel, clientInfo, serviceName }) 
         >
           {processing ? (
             <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
               Processing…
             </>
           ) : (
@@ -172,7 +228,16 @@ function CheckoutForm({ amount, onSuccess, onCancel, clientInfo, serviceName }) 
   )
 }
 
-function PaymentForm({ amount, onSuccess, onCancel, clientInfo, serviceName }) {
+function PaymentForm({ 
+  amount, 
+  onSuccess, 
+  onCancel, 
+  clientInfo, 
+  serviceName,
+  shopId,
+  bookingRefCode,
+  shopHasConnect = true
+}) {
   return (
     <Elements stripe={stripePromise}>
       <CheckoutForm 
@@ -181,6 +246,9 @@ function PaymentForm({ amount, onSuccess, onCancel, clientInfo, serviceName }) {
         onCancel={onCancel}
         clientInfo={clientInfo}
         serviceName={serviceName}
+        shopId={shopId}
+        bookingRefCode={bookingRefCode}
+        shopHasConnect={shopHasConnect}
       />
     </Elements>
   )

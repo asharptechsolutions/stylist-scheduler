@@ -529,6 +529,12 @@ exports.stripeWebhook = onRequest(
           break
         }
 
+        case 'account.updated': {
+          const account = event.data.object
+          await handleAccountUpdated(account)
+          break
+        }
+
         default:
           console.log(`Unhandled event type: ${event.type}`)
       }
@@ -707,4 +713,433 @@ async function handlePaymentFailed(invoice) {
   })
 
   console.log(`Shop ${shopDoc.id} marked as past_due due to failed payment`)
+}
+
+// ============================================================
+// STRIPE CONNECT FUNCTIONS
+// ============================================================
+
+// Create a Stripe Connect Express account for a shop
+exports.createConnectAccount = onRequest(
+  {
+    cors: true,
+    secrets: [stripeSecretKey]
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
+    }
+
+    try {
+      const { shopId, email, businessName, returnUrl, refreshUrl } = req.body
+
+      if (!shopId) {
+        res.status(400).json({ error: 'Missing shopId' })
+        return
+      }
+
+      const stripe = new Stripe(stripeSecretKey.value())
+
+      // Get shop data
+      const shopDoc = await db.collection('shops').doc(shopId).get()
+      if (!shopDoc.exists) {
+        res.status(404).json({ error: 'Shop not found' })
+        return
+      }
+      const shop = shopDoc.data()
+
+      // Check if shop already has a Connect account
+      if (shop.stripeAccountId) {
+        // Return existing account
+        res.json({ 
+          accountId: shop.stripeAccountId,
+          alreadyExists: true
+        })
+        return
+      }
+
+      // Create Express account
+      const account = await stripe.accounts.create({
+        type: 'express',
+        email: email || shop.ownerEmail,
+        business_profile: {
+          name: businessName || shop.name,
+          url: `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}`,
+        },
+        metadata: {
+          shopId: shopId,
+          shopName: shop.name,
+        },
+        capabilities: {
+          card_payments: { requested: true },
+          transfers: { requested: true },
+        },
+      })
+
+      // Save account ID to shop
+      await db.collection('shops').doc(shopId).update({
+        stripeAccountId: account.id,
+        stripeAccountStatus: 'pending',
+        stripeOnboardingComplete: false,
+        payoutsEnabled: false,
+        connectCreatedAt: FieldValue.serverTimestamp(),
+      })
+
+      console.log(`Created Connect account ${account.id} for shop ${shopId}`)
+
+      res.json({ 
+        accountId: account.id,
+        alreadyExists: false
+      })
+    } catch (error) {
+      console.error('Error creating Connect account:', error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
+
+// Create an account link for onboarding
+exports.createAccountLink = onRequest(
+  {
+    cors: true,
+    secrets: [stripeSecretKey]
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
+    }
+
+    try {
+      const { shopId, returnUrl, refreshUrl } = req.body
+
+      if (!shopId) {
+        res.status(400).json({ error: 'Missing shopId' })
+        return
+      }
+
+      const stripe = new Stripe(stripeSecretKey.value())
+
+      // Get shop data
+      const shopDoc = await db.collection('shops').doc(shopId).get()
+      if (!shopDoc.exists) {
+        res.status(404).json({ error: 'Shop not found' })
+        return
+      }
+      const shop = shopDoc.data()
+
+      if (!shop.stripeAccountId) {
+        res.status(400).json({ error: 'No Connect account found. Create one first.' })
+        return
+      }
+
+      // Create account link
+      const accountLink = await stripe.accountLinks.create({
+        account: shop.stripeAccountId,
+        refresh_url: refreshUrl || `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}/dashboard?connect=refresh`,
+        return_url: returnUrl || `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}/dashboard?connect=return`,
+        type: 'account_onboarding',
+      })
+
+      console.log(`Created account link for ${shop.stripeAccountId}`)
+
+      res.json({ url: accountLink.url })
+    } catch (error) {
+      console.error('Error creating account link:', error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
+
+// Get Stripe Express Dashboard login link
+exports.getConnectDashboardLink = onRequest(
+  {
+    cors: true,
+    secrets: [stripeSecretKey]
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
+    }
+
+    try {
+      const { shopId } = req.body
+
+      if (!shopId) {
+        res.status(400).json({ error: 'Missing shopId' })
+        return
+      }
+
+      const stripe = new Stripe(stripeSecretKey.value())
+
+      // Get shop data
+      const shopDoc = await db.collection('shops').doc(shopId).get()
+      if (!shopDoc.exists) {
+        res.status(404).json({ error: 'Shop not found' })
+        return
+      }
+      const shop = shopDoc.data()
+
+      if (!shop.stripeAccountId) {
+        res.status(400).json({ error: 'No Connect account found' })
+        return
+      }
+
+      // Create login link to Express dashboard
+      const loginLink = await stripe.accounts.createLoginLink(shop.stripeAccountId)
+
+      res.json({ url: loginLink.url })
+    } catch (error) {
+      console.error('Error creating dashboard link:', error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
+
+// Create PaymentIntent for deposit with Connect transfer
+exports.createDepositPaymentIntent = onRequest(
+  {
+    cors: true,
+    secrets: [stripeSecretKey]
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
+    }
+
+    try {
+      const { 
+        shopId, 
+        amount, // in cents
+        serviceName,
+        clientName,
+        clientEmail,
+        bookingRefCode,
+        paymentMethodId 
+      } = req.body
+
+      if (!shopId || !amount) {
+        res.status(400).json({ error: 'Missing shopId or amount' })
+        return
+      }
+
+      const stripe = new Stripe(stripeSecretKey.value())
+
+      // Get shop data
+      const shopDoc = await db.collection('shops').doc(shopId).get()
+      if (!shopDoc.exists) {
+        res.status(404).json({ error: 'Shop not found' })
+        return
+      }
+      const shop = shopDoc.data()
+
+      // Check if shop has a connected account
+      if (!shop.stripeAccountId) {
+        res.status(400).json({ 
+          error: 'Shop has not connected Stripe yet',
+          needsConnect: true
+        })
+        return
+      }
+
+      // Check if connected account can receive payments
+      if (!shop.payoutsEnabled) {
+        res.status(400).json({ 
+          error: 'Shop Stripe account is not fully set up',
+          needsOnboarding: true
+        })
+        return
+      }
+
+      // Calculate platform fee based on tier
+      // Free tier: 5% platform fee
+      // Pro/Unlimited: 0% platform fee
+      const tier = shop.subscriptionTier || 'free'
+      const platformFeePercent = tier === 'free' ? 5 : 0
+      const applicationFeeAmount = Math.round(amount * (platformFeePercent / 100))
+
+      // Create PaymentIntent with transfer to connected account
+      const paymentIntentParams = {
+        amount: amount,
+        currency: 'usd',
+        payment_method: paymentMethodId,
+        confirm: true,
+        automatic_payment_methods: {
+          enabled: true,
+          allow_redirects: 'never',
+        },
+        transfer_data: {
+          destination: shop.stripeAccountId,
+        },
+        metadata: {
+          shopId: shopId,
+          shopName: shop.name,
+          serviceName: serviceName || '',
+          clientName: clientName || '',
+          clientEmail: clientEmail || '',
+          bookingRefCode: bookingRefCode || '',
+          platformFeePercent: platformFeePercent.toString(),
+        },
+        description: `Deposit for ${serviceName || 'appointment'} at ${shop.name}`,
+      }
+
+      // Add application fee if applicable
+      if (applicationFeeAmount > 0) {
+        paymentIntentParams.application_fee_amount = applicationFeeAmount
+      }
+
+      // Add receipt email if provided
+      if (clientEmail) {
+        paymentIntentParams.receipt_email = clientEmail
+      }
+
+      const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams)
+
+      console.log(`Created PaymentIntent ${paymentIntent.id} for shop ${shopId}, fee: ${applicationFeeAmount}`)
+
+      res.json({
+        success: true,
+        paymentIntentId: paymentIntent.id,
+        status: paymentIntent.status,
+        amount: amount,
+        applicationFee: applicationFeeAmount,
+      })
+    } catch (error) {
+      console.error('Error creating payment intent:', error)
+      
+      // Handle specific Stripe errors
+      if (error.type === 'StripeCardError') {
+        res.status(400).json({ error: error.message, code: error.code })
+      } else {
+        res.status(500).json({ error: error.message })
+      }
+    }
+  }
+)
+
+// Get Connect account balance/earnings
+exports.getConnectBalance = onRequest(
+  {
+    cors: true,
+    secrets: [stripeSecretKey]
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
+    }
+
+    try {
+      const { shopId } = req.body
+
+      if (!shopId) {
+        res.status(400).json({ error: 'Missing shopId' })
+        return
+      }
+
+      const stripe = new Stripe(stripeSecretKey.value())
+
+      // Get shop data
+      const shopDoc = await db.collection('shops').doc(shopId).get()
+      if (!shopDoc.exists) {
+        res.status(404).json({ error: 'Shop not found' })
+        return
+      }
+      const shop = shopDoc.data()
+
+      if (!shop.stripeAccountId) {
+        res.status(400).json({ error: 'No Connect account found' })
+        return
+      }
+
+      // Get account balance
+      const balance = await stripe.balance.retrieve({
+        stripeAccount: shop.stripeAccountId,
+      })
+
+      // Get recent payouts
+      const payouts = await stripe.payouts.list({
+        limit: 10,
+      }, {
+        stripeAccount: shop.stripeAccountId,
+      })
+
+      // Get recent charges (payments received)
+      const charges = await stripe.charges.list({
+        limit: 20,
+      }, {
+        stripeAccount: shop.stripeAccountId,
+      })
+
+      res.json({
+        balance: {
+          available: balance.available,
+          pending: balance.pending,
+        },
+        recentPayouts: payouts.data.map(p => ({
+          id: p.id,
+          amount: p.amount,
+          currency: p.currency,
+          status: p.status,
+          arrivalDate: p.arrival_date,
+          created: p.created,
+        })),
+        recentCharges: charges.data.map(c => ({
+          id: c.id,
+          amount: c.amount,
+          currency: c.currency,
+          status: c.status,
+          description: c.description,
+          created: c.created,
+          metadata: c.metadata,
+        })),
+      })
+    } catch (error) {
+      console.error('Error getting Connect balance:', error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
+
+// Helper function: Handle account.updated webhook
+async function handleAccountUpdated(account) {
+  const shopId = account.metadata?.shopId
+
+  let targetShopId = shopId
+  if (!targetShopId) {
+    // Try to find shop by account ID
+    const shopsSnapshot = await db.collection('shops')
+      .where('stripeAccountId', '==', account.id)
+      .limit(1)
+      .get()
+
+    if (shopsSnapshot.empty) {
+      console.error('No shop found for Connect account:', account.id)
+      return
+    }
+
+    targetShopId = shopsSnapshot.docs[0].id
+  }
+
+  // Determine account status
+  let status = 'pending'
+  if (account.details_submitted && account.charges_enabled) {
+    status = 'active'
+  } else if (account.requirements?.disabled_reason) {
+    status = 'restricted'
+  }
+
+  // Update shop document
+  await db.collection('shops').doc(targetShopId).update({
+    stripeAccountStatus: status,
+    stripeOnboardingComplete: account.details_submitted || false,
+    payoutsEnabled: account.payouts_enabled || false,
+    chargesEnabled: account.charges_enabled || false,
+    connectUpdatedAt: FieldValue.serverTimestamp(),
+  })
+
+  console.log(`Updated Connect status for shop ${targetShopId}: ${status}, payouts: ${account.payouts_enabled}`)
 }

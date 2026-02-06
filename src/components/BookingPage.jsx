@@ -1493,13 +1493,62 @@ function BookingPage() {
               </div>
             </div>
 
-            <PaymentForm
-              amount={depositAmount}
-              serviceName={selectedService?.name || 'Service'}
-              clientInfo={clientInfo}
-              onSuccess={handlePaymentSuccess}
-              onCancel={() => setShowPaymentForm(false)}
-            />
+            {/* Show warning if shop hasn't set up Stripe Connect */}
+            {!shop?.payoutsEnabled && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <CreditCard className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-amber-800 text-sm">Payment Setup in Progress</p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      This shop is still setting up their payment system. You can still book,
+                      but payment will be collected at the time of your appointment.
+                    </p>
+                    <button
+                      onClick={() => confirmBooking()}
+                      disabled={submitting}
+                      className="mt-3 flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-sm transition-all disabled:opacity-50"
+                    >
+                      {submitting ? (
+                        <>
+                          <div className="spinner-sm border-white/30 border-t-white" />
+                          Booking…
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4" />
+                          Book Without Deposit
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {shop?.payoutsEnabled && (
+              <PaymentForm
+                amount={depositAmount}
+                serviceName={selectedService?.name || 'Service'}
+                clientInfo={clientInfo}
+                onSuccess={handlePaymentSuccess}
+                onCancel={() => setShowPaymentForm(false)}
+                shopId={shopId}
+                bookingRefCode={null}
+                shopHasConnect={shop?.payoutsEnabled}
+              />
+            )}
+
+            {!shop?.payoutsEnabled && (
+              <button
+                onClick={() => setShowPaymentForm(false)}
+                className="w-full px-5 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
+              >
+                ← Back
+              </button>
+            )}
           </div>
         )}
       </div>

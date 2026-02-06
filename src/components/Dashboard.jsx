@@ -11,6 +11,7 @@ import AnalyticsTab from './AnalyticsTab'
 import WalkInsTab from './WalkInsTab'
 import ClientsTab from './ClientsTab'
 import SubscriptionTab from './SubscriptionTab'
+import StripeConnectSettings from './StripeConnectSettings'
 import { findMatchingEntries } from '../utils/waitlistMatcher'
 import { getStaffLimit, canAddStaff } from '../utils/features'
 
@@ -1252,6 +1253,11 @@ function Dashboard({ user }) {
                   </>
                 )}
               </div>
+            </div>
+
+            {/* Stripe Connect / Payments Settings */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <StripeConnectSettings shopId={shopId} shop={shop} slug={slug} />
             </div>
           </div>
         )}
