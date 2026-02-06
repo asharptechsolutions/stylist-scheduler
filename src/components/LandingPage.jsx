@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom'
-import { Calendar, Clock, Users, Shield, Scissors, ArrowRight, Star, CheckCircle, Sparkles, Globe, Zap } from 'lucide-react'
+import { Calendar, Clock, Users, Shield, CalendarCheck, ArrowRight, Star, CheckCircle, Sparkles, Globe, Zap } from 'lucide-react'
 
 function Logo({ className = '' }) {
   return (
     <Link to="/" className={`flex items-center gap-2.5 ${className}`}>
       <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-md shadow-blue-600/20">
-        <Scissors className="w-[18px] h-[18px] text-white" />
+        <CalendarCheck className="w-[18px] h-[18px] text-white" />
       </div>
       <span className="text-xl font-extrabold tracking-tight text-slate-900">
         Spot<span className="text-amber-500">Bookie</span>

@@ -30,7 +30,7 @@ function SpotBookieMark() {
   return (
     <Link to="/" className="flex items-center gap-2">
       <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
-        <Scissors className="w-3.5 h-3.5 text-white" />
+        <CalendarCheck className="w-3.5 h-3.5 text-white" />
       </div>
       <span className="text-sm font-extrabold tracking-tight text-slate-900">
         Spot<span className="text-amber-500">Bookie</span>

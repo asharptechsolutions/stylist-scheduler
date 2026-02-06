@@ -77,7 +77,7 @@ function SignIn({ user }) {
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2.5">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-md shadow-blue-600/20">
-              <Scissors className="w-5 h-5 text-white" />
+              <CalendarCheck className="w-5 h-5 text-white" />
             </div>
             <span className="text-2xl font-extrabold tracking-tight text-slate-900">
               Spot<span className="text-amber-500">Bookie</span>

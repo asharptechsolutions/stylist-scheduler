@@ -74,6 +74,45 @@ service cloud.firestore {
         allow update, delete: if request.auth != null 
           && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
       }
+      
+      // ========================================
+      // WAITLIST
+      // ========================================
+      match /waitlist/{entryId} {
+        // Anyone can read waitlist (booking page shows queue position)
+        allow read: if true;
+        
+        // Anyone can join the waitlist
+        allow create: if true;
+        
+        // Only the shop owner can update or remove waitlist entries
+        allow update, delete: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+      }
+      
+      // ========================================
+      // WALK-INS
+      // ========================================
+      match /walkins/{walkinId} {
+        // Anyone can read walk-ins (for queue display)
+        allow read: if true;
+        
+        // Anyone can check in as a walk-in
+        allow create: if true;
+        
+        // Only the shop owner can manage walk-ins
+        allow update, delete: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+      }
+      
+      // ========================================
+      // CLIENT NOTES (CRM)
+      // ========================================
+      match /clientNotes/{noteId} {
+        // Only the shop owner can read and write client notes
+        allow read, write: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+      }
     }
     
     // Deny everything else by default
