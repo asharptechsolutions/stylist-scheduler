@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
-import { ArrowLeft, Scissors, ArrowRight } from 'lucide-react'
+import { ArrowLeft, CalendarCheck, ArrowRight } from 'lucide-react'
 
 function generateSlug(name) {
   return name

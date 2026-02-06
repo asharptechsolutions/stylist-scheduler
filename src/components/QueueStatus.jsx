@@ -13,7 +13,7 @@ import { db } from '../firebase'
 import {
   Clock,
   Users,
-  Scissors,
+  CalendarCheck,
   ArrowLeft,
   Plus,
   Tag,

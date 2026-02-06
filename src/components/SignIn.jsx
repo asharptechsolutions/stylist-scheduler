@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { signInWithEmailAndPassword } from 'firebase/auth'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { auth, db } from '../firebase'
-import { ArrowLeft, Scissors, ArrowRight } from 'lucide-react'
+import { ArrowLeft, CalendarCheck, ArrowRight } from 'lucide-react'
 
 function SignIn({ user }) {
   const navigate = useNavigate()

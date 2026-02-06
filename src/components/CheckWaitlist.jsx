@@ -13,7 +13,7 @@ import {
   CheckCircle,
   Calendar as CalendarIcon,
   ArrowLeft,
-  Scissors,
+  CalendarCheck,
   Tag,
   Users,
   AlertTriangle,
