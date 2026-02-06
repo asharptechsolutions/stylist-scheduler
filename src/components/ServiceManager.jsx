@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { collection, addDoc, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Plus, Edit3, Trash2, X, Check, DollarSign, Clock, Tag } from 'lucide-react'
+import { Plus, Edit3, Trash2, X, Check, DollarSign, Clock, Tag, CreditCard, Percent } from 'lucide-react'
 
 const DURATION_OPTIONS = [
   { value: 15, label: '15 min' },
@@ -10,6 +10,15 @@ const DURATION_OPTIONS = [
   { value: 60, label: '1 hour' },
   { value: 90, label: '1.5 hours' },
   { value: 120, label: '2 hours' },
+]
+
+const DEPOSIT_OPTIONS = [
+  { value: 0, label: 'No deposit required' },
+  { value: 10, label: '10%' },
+  { value: 20, label: '20%' },
+  { value: 25, label: '25%' },
+  { value: 50, label: '50%' },
+  { value: 100, label: 'Full payment upfront' },
 ]
 
 function ServiceManager({ shopId }) {
@@ -21,6 +30,7 @@ function ServiceManager({ shopId }) {
     description: '',
     duration: 30,
     price: '',
+    depositPercent: 0,
   })
   const [saving, setSaving] = useState(false)
 
@@ -42,7 +52,7 @@ function ServiceManager({ shopId }) {
   }, [shopId])
 
   const resetForm = () => {
-    setFormData({ name: '', description: '', duration: 30, price: '' })
+    setFormData({ name: '', description: '', duration: 30, price: '', depositPercent: 0 })
     setShowForm(false)
     setEditingId(null)
   }
@@ -56,6 +66,7 @@ function ServiceManager({ shopId }) {
       description: formData.description.trim(),
       duration: parseInt(formData.duration),
       price: parseFloat(formData.price),
+      depositPercent: parseInt(formData.depositPercent) || 0,
       active: true,
     }
 
@@ -82,6 +93,7 @@ function ServiceManager({ shopId }) {
       description: service.description || '',
       duration: service.duration,
       price: service.price.toString(),
+      depositPercent: service.depositPercent || 0,
     })
     setEditingId(service.id)
     setShowForm(true)
@@ -169,7 +181,7 @@ function ServiceManager({ shopId }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Duration *
@@ -206,7 +218,38 @@ function ServiceManager({ shopId }) {
                   />
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  <span className="flex items-center gap-1.5">
+                    <CreditCard className="w-4 h-4 text-emerald-500" />
+                    Deposit Required
+                  </span>
+                </label>
+                <select
+                  value={formData.depositPercent}
+                  onChange={(e) => setFormData({ ...formData, depositPercent: e.target.value })}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                >
+                  {DEPOSIT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+            
+            {formData.depositPercent > 0 && formData.price && (
+              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm">
+                <CreditCard className="w-4 h-4 text-emerald-600" />
+                <span className="text-emerald-800">
+                  Clients will pay <strong>${((parseFloat(formData.price) || 0) * (parseInt(formData.depositPercent) / 100)).toFixed(2)}</strong> deposit at booking
+                  {parseInt(formData.depositPercent) < 100 && (
+                    <span> (${((parseFloat(formData.price) || 0) * (1 - parseInt(formData.depositPercent) / 100)).toFixed(2)} remaining due at appointment)</span>
+                  )}
+                </span>
+              </div>
+            )}
 
             <div className="flex gap-3 pt-2">
               <button
@@ -258,11 +301,17 @@ function ServiceManager({ shopId }) {
                 </span>
               </div>
 
-              <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
+              <div className="flex items-center gap-4 text-sm text-slate-500 mb-4 flex-wrap">
                 <span className="flex items-center gap-1.5">
                   <Clock className="w-4 h-4" />
                   {formatDuration(service.duration)}
                 </span>
+                {service.depositPercent > 0 && (
+                  <span className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-xs font-medium">
+                    <CreditCard className="w-3 h-3" />
+                    {service.depositPercent}% deposit
+                  </span>
+                )}
               </div>
 
               <div className="flex gap-2">

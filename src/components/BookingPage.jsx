@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat, CreditCard } from 'lucide-react'
 import Calendar from './Calendar'
 import WaitlistForm from './WaitlistForm'
 import BookingAssistant from './BookingAssistant'
+import PaymentForm from './PaymentForm'
 import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
 
 /* ── Initials avatar ── */
@@ -214,6 +215,10 @@ function BookingPage() {
   const [recurringEnabled, setRecurringEnabled] = useState(false)
   const [recurringInterval, setRecurringInterval] = useState('biweekly')
   const [recurringResult, setRecurringResult] = useState(null) // { created, skipped } after booking
+
+  // Payment state
+  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const [paymentInfo, setPaymentInfo] = useState(null) // { paymentMethodId, last4, brand }
 
   // Look up shop by slug
   useEffect(() => {
@@ -509,8 +514,23 @@ function BookingPage() {
     return code
   }
 
-  const confirmBooking = async (e) => {
+  // Handle form submission - either go to payment or confirm directly
+  const handleFormSubmit = (e) => {
     e.preventDefault()
+    if (requiresDeposit) {
+      setShowPaymentForm(true)
+    } else {
+      confirmBooking()
+    }
+  }
+
+  // Handle payment success
+  const handlePaymentSuccess = (payment) => {
+    setPaymentInfo(payment)
+    confirmBooking(payment)
+  }
+
+  const confirmBooking = async (payment = null) => {
     setSubmitting(true)
     setRecurringResult(null)
 
@@ -540,6 +560,17 @@ function BookingPage() {
         bookingData.serviceName = selectedService.name
         bookingData.servicePrice = selectedService.price
         bookingData.serviceDuration = selectedService.duration
+        bookingData.depositPercent = selectedService.depositPercent || 0
+      }
+
+      // Add payment info if deposit was collected
+      if (payment || paymentInfo) {
+        const pmt = payment || paymentInfo
+        bookingData.depositPaid = true
+        bookingData.depositAmount = depositAmount / 100 // convert cents to dollars
+        bookingData.paymentMethodId = pmt.paymentMethodId
+        bookingData.cardLast4 = pmt.last4
+        bookingData.cardBrand = pmt.brand
       }
 
       if (selectedStaff && selectedStaff !== 'any') {
@@ -593,6 +624,8 @@ function BookingPage() {
 
       setClientInfo({ name: '', email: '', phone: '' })
       setShowBookingForm(false)
+      setShowPaymentForm(false)
+      setPaymentInfo(null)
       setSelectedSlot(null)
       setSelectedService(null)
       setSelectedDate(null)
@@ -686,7 +719,14 @@ function BookingPage() {
     : compatibleSlots
 
   // Determine current step
+  // Check if payment is required
+  const requiresDeposit = selectedService && selectedService.depositPercent > 0
+  const depositAmount = requiresDeposit 
+    ? Math.round(selectedService.price * (selectedService.depositPercent / 100) * 100) // in cents
+    : 0
+
   const getStep = () => {
+    if (showPaymentForm) return 'payment'
     if (showBookingForm) return 'form'
     if (hasServices && !selectedService) return 'services'
     if (showStaffStep && !selectedStaff) return 'staff'
@@ -700,7 +740,8 @@ function BookingPage() {
   if (hasServices) steps.push({ key: 'services', label: 'Service' })
   if (showStaffStep) steps.push({ key: 'staff', label: 'Stylist' })
   steps.push({ key: 'calendar', label: 'Date & Time' })
-  steps.push({ key: 'form', label: 'Confirm' })
+  steps.push({ key: 'form', label: 'Details' })
+  if (requiresDeposit) steps.push({ key: 'payment', label: 'Payment' })
 
   const currentStepIndex = steps.findIndex((s) => s.key === step)
 
@@ -1261,7 +1302,7 @@ function BookingPage() {
               </div>
             </div>
 
-            <form onSubmit={confirmBooking} className="space-y-4">
+            <form onSubmit={handleFormSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   Full Name
@@ -1368,16 +1409,42 @@ function BookingPage() {
                 )}
               </div>
 
+              {/* Deposit notice */}
+              {requiresDeposit && (
+                <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <CreditCard className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-800">
+                      ${(depositAmount / 100).toFixed(2)} deposit required
+                    </p>
+                    <p className="text-xs text-emerald-600">
+                      {selectedService.depositPercent}% of service price · Remaining ${(selectedService.price - depositAmount / 100).toFixed(2)} due at appointment
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/25 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                  className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 ${
+                    requiresDeposit 
+                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 hover:shadow-emerald-600/25' 
+                      : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 hover:shadow-blue-600/25'
+                  } text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0`}
                 >
                   {submitting ? (
                     <>
                       <div className="spinner-sm border-white/30 border-t-white" />
                       Booking…
+                    </>
+                  ) : requiresDeposit ? (
+                    <>
+                      <CreditCard className="w-4 h-4" />
+                      Continue to Payment
                     </>
                   ) : (
                     <>
@@ -1398,6 +1465,41 @@ function BookingPage() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {/* ─── Step: Payment ─── */}
+        {step === 'payment' && (
+          <div className="max-w-lg mx-auto animate-fade-in">
+            <h2 className="text-2xl font-bold text-slate-900 mb-1">Secure Payment</h2>
+            <p className="text-slate-500 text-sm mb-6">Complete your deposit to confirm your booking</p>
+
+            {/* Appointment summary */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <CalendarIcon className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-800">{selectedService?.name}</p>
+                  <p className="text-sm text-slate-500">
+                    {selectedSlot && formatDate(selectedSlot.date)} at {selectedSlot && formatTime(selectedSlot.time)}
+                  </p>
+                </div>
+              </div>
+              <div className="text-sm text-slate-600 pl-13">
+                <p><strong>Client:</strong> {clientInfo.name}</p>
+                <p><strong>Email:</strong> {clientInfo.email}</p>
+              </div>
+            </div>
+
+            <PaymentForm
+              amount={depositAmount}
+              serviceName={selectedService?.name || 'Service'}
+              clientInfo={clientInfo}
+              onSuccess={handlePaymentSuccess}
+              onCancel={() => setShowPaymentForm(false)}
+            />
           </div>
         )}
       </div>
