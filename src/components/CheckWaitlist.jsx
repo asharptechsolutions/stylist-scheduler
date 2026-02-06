@@ -22,14 +22,14 @@ import {
 } from 'lucide-react'
 
 /* ── Logo ── */
-function BookFlowMark() {
+function SpotBookieMark() {
   return (
     <Link to="/" className="flex items-center gap-2">
       <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
         <Scissors className="w-3.5 h-3.5 text-white" />
       </div>
       <span className="text-sm font-extrabold tracking-tight text-slate-900">
-        Book<span className="text-blue-600">Flow</span>
+        Spot<span className="text-amber-500">Bookie</span>
       </span>
     </Link>
   )
@@ -207,7 +207,7 @@ export default function CheckWaitlist() {
                 <p className="text-xs text-slate-500">Waitlist Status</p>
               </div>
             </div>
-            <BookFlowMark />
+            <SpotBookieMark />
           </div>
         </header>
         <div className="max-w-4xl mx-auto px-5 sm:px-8 py-8">
@@ -311,7 +311,7 @@ export default function CheckWaitlist() {
               <p className="text-xs text-slate-500">Waitlist Status</p>
             </div>
           </div>
-          <BookFlowMark />
+          <SpotBookieMark />
         </div>
       </header>
 
@@ -491,7 +491,7 @@ export default function CheckWaitlist() {
               to="/"
               className="font-semibold text-slate-500 hover:text-blue-600 transition-colors"
             >
-              BookFlow
+              SpotBookie
             </Link>
           </span>
         </div>

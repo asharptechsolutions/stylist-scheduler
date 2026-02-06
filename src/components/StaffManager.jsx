@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { collection, addDoc, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { db, storage } from '../firebase'
-import { Plus, Edit3, Trash2, X, Check, Users, Clock, Camera, Image, Loader2 } from 'lucide-react'
+import { Plus, Edit3, Trash2, X, Check, Users, Clock, Camera, Image, Loader2, Crown, Zap } from 'lucide-react'
 import WeeklyHoursEditor from './WeeklyHoursEditor'
+import { getStaffLimit, canAddStaff } from '../utils/features'
+import { UpgradeModal, StaffLimitBanner } from './UpgradePrompt'
 
 const DAY_LABELS = [
   { key: 'monday', short: 'Mon' },
@@ -26,7 +28,7 @@ function formatTimeShort(time) {
   return m === 0 ? `${hour}${ampm}` : `${hour}:${m.toString().padStart(2, '0')}${ampm}`
 }
 
-function StaffManager({ shopId }) {
+function StaffManager({ shopId, shop, slug }) {
   const [staff, setStaff] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -37,6 +39,11 @@ function StaffManager({ shopId }) {
     role: '',
   })
   const [saving, setSaving] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+
+  // Staff limits
+  const staffLimit = getStaffLimit(shop)
+  const canAdd = canAddStaff(shop, staff.length)
 
   // Bio editing state
   const [editingBioId, setEditingBioId] = useState(null)
@@ -277,18 +284,46 @@ function StaffManager({ shopId }) {
           </p>
         </div>
         {!showForm && (
-          <button
-            onClick={() => {
-              resetForm()
-              setShowForm(true)
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
-          >
-            <Plus className="w-4 h-4" />
-            Add Staff
-          </button>
+          canAdd ? (
+            <button
+              onClick={() => {
+                resetForm()
+                setShowForm(true)
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
+            >
+              <Plus className="w-4 h-4" />
+              Add Staff
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowUpgradeModal(true)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 transition-all hover:-translate-y-0.5"
+            >
+              <Crown className="w-4 h-4" />
+              Upgrade to Add More
+            </button>
+          )
         )}
       </div>
+
+      {/* Staff Limit Banner */}
+      <StaffLimitBanner
+        currentCount={staff.length}
+        limit={staffLimit}
+        onUpgradeClick={() => setShowUpgradeModal(true)}
+      />
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        shopId={shopId}
+        slug={slug}
+        currentTier={shop?.subscriptionTier || 'free'}
+        title="Add More Staff Members"
+        description={`Your ${shop?.subscriptionTier || 'Free'} plan allows ${staffLimit} staff member${staffLimit !== 1 ? 's' : ''}. Upgrade to add more.`}
+      />
 
       {/* Add / Edit Form */}
       {showForm && (

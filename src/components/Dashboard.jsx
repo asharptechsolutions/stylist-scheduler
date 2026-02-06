@@ -3,14 +3,16 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
 import AnalyticsTab from './AnalyticsTab'
 import WalkInsTab from './WalkInsTab'
 import ClientsTab from './ClientsTab'
+import SubscriptionTab from './SubscriptionTab'
 import { findMatchingEntries } from '../utils/waitlistMatcher'
+import { getStaffLimit, canAddStaff } from '../utils/features'
 
 const DAY_LABELS = [
   { key: 'monday', short: 'Mon' },
@@ -596,6 +598,7 @@ function Dashboard({ user }) {
     { key: 'waitlist', label: 'Waitlist', icon: ListOrdered },
     { key: 'staff', label: 'Staff', icon: Users },
     { key: 'services', label: 'Services', icon: Tag },
+    { key: 'subscription', label: 'Plan', icon: Crown },
     { key: 'settings', label: 'Settings', icon: Settings },
   ]
 
@@ -722,7 +725,7 @@ function Dashboard({ user }) {
         {/* Staff Tab */}
         {activeTab === 'staff' && (
           <div className="bg-white rounded-xl border border-slate-200 p-6 animate-fade-in">
-            <StaffManager shopId={shopId} />
+            <StaffManager shopId={shopId} shop={shop} slug={slug} />
           </div>
         )}
 
@@ -731,6 +734,11 @@ function Dashboard({ user }) {
           <div className="bg-white rounded-xl border border-slate-200 p-6 animate-fade-in">
             <ServiceManager shopId={shopId} />
           </div>
+        )}
+
+        {/* Subscription Tab */}
+        {activeTab === 'subscription' && (
+          <SubscriptionTab shopId={shopId} shop={shop} slug={slug} />
         )}
 
         {/* Waitlist Alert Modal */}

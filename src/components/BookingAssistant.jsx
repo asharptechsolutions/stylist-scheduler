@@ -488,7 +488,7 @@ export default function BookingAssistant({ services, staffMembers, shop, onSelec
                 <MessageCircle className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold leading-tight">BookFlow Assistant</h3>
+                <h3 className="text-sm font-bold leading-tight">SpotBookie Assistant</h3>
                 <p className="text-[11px] text-blue-100">Ask me anything about booking</p>
               </div>
             </div>

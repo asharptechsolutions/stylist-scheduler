@@ -80,7 +80,7 @@ function SignIn({ user }) {
               <Scissors className="w-5 h-5 text-white" />
             </div>
             <span className="text-2xl font-extrabold tracking-tight text-slate-900">
-              Book<span className="text-blue-600">Flow</span>
+              Spot<span className="text-amber-500">Bookie</span>
             </span>
           </Link>
         </div>

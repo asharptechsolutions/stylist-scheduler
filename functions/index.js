@@ -1,8 +1,10 @@
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore')
+const { onRequest } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params')
 const { initializeApp } = require('firebase-admin/app')
-const { getFirestore } = require('firebase-admin/firestore')
+const { getFirestore, FieldValue } = require('firebase-admin/firestore')
 const { Resend } = require('resend')
+const Stripe = require('stripe')
 
 // Initialize Firebase Admin
 initializeApp()
@@ -10,6 +12,8 @@ const db = getFirestore()
 
 // Define secrets (set these with: firebase functions:secrets:set RESEND_API_KEY)
 const resendApiKey = defineSecret('RESEND_API_KEY')
+const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY')
+const stripeWebhookSecret = defineSecret('STRIPE_WEBHOOK_SECRET')
 
 // Email templates
 const emailTemplates = {
@@ -340,3 +344,367 @@ exports.onBookingConfirmed = onDocumentUpdated(
     }
   }
 )
+
+// ============================================================
+// STRIPE SUBSCRIPTION FUNCTIONS
+// ============================================================
+
+// Create a Stripe Checkout session for subscription upgrade
+exports.createCheckoutSession = onRequest(
+  {
+    cors: true,
+    secrets: [stripeSecretKey]
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
+    }
+
+    try {
+      const { shopId, priceId, successUrl, cancelUrl } = req.body
+
+      if (!shopId || !priceId) {
+        res.status(400).json({ error: 'Missing shopId or priceId' })
+        return
+      }
+
+      const stripe = new Stripe(stripeSecretKey.value())
+
+      // Get shop data
+      const shopDoc = await db.collection('shops').doc(shopId).get()
+      if (!shopDoc.exists) {
+        res.status(404).json({ error: 'Shop not found' })
+        return
+      }
+      const shop = shopDoc.data()
+
+      // Check if shop already has a Stripe customer
+      let customerId = shop.stripeCustomerId
+      if (!customerId) {
+        // Create a new Stripe customer
+        const customer = await stripe.customers.create({
+          email: shop.ownerEmail,
+          metadata: {
+            shopId: shopId,
+            shopName: shop.name,
+          },
+        })
+        customerId = customer.id
+
+        // Save customer ID to shop
+        await db.collection('shops').doc(shopId).update({
+          stripeCustomerId: customerId,
+        })
+      }
+
+      // Create checkout session
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        success_url: successUrl || `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}/dashboard?subscription=success`,
+        cancel_url: cancelUrl || `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}/dashboard?subscription=canceled`,
+        metadata: {
+          shopId: shopId,
+        },
+        subscription_data: {
+          metadata: {
+            shopId: shopId,
+          },
+        },
+      })
+
+      res.json({ sessionId: session.id, url: session.url })
+    } catch (error) {
+      console.error('Error creating checkout session:', error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
+
+// Create a Stripe Billing Portal session
+exports.createBillingPortalSession = onRequest(
+  {
+    cors: true,
+    secrets: [stripeSecretKey]
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
+    }
+
+    try {
+      const { shopId, returnUrl } = req.body
+
+      if (!shopId) {
+        res.status(400).json({ error: 'Missing shopId' })
+        return
+      }
+
+      const stripe = new Stripe(stripeSecretKey.value())
+
+      // Get shop data
+      const shopDoc = await db.collection('shops').doc(shopId).get()
+      if (!shopDoc.exists) {
+        res.status(404).json({ error: 'Shop not found' })
+        return
+      }
+      const shop = shopDoc.data()
+
+      if (!shop.stripeCustomerId) {
+        res.status(400).json({ error: 'No Stripe customer found for this shop' })
+        return
+      }
+
+      // Create billing portal session
+      const session = await stripe.billingPortal.sessions.create({
+        customer: shop.stripeCustomerId,
+        return_url: returnUrl || `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}/dashboard`,
+      })
+
+      res.json({ url: session.url })
+    } catch (error) {
+      console.error('Error creating billing portal session:', error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
+
+// Stripe Webhook Handler
+exports.stripeWebhook = onRequest(
+  {
+    secrets: [stripeSecretKey, stripeWebhookSecret]
+  },
+  async (req, res) => {
+    const stripe = new Stripe(stripeSecretKey.value())
+    const sig = req.headers['stripe-signature']
+
+    let event
+    try {
+      // Verify webhook signature
+      event = stripe.webhooks.constructEvent(
+        req.rawBody,
+        sig,
+        stripeWebhookSecret.value()
+      )
+    } catch (err) {
+      console.error('Webhook signature verification failed:', err.message)
+      res.status(400).send(`Webhook Error: ${err.message}`)
+      return
+    }
+
+    console.log(`Received Stripe event: ${event.type}`)
+
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object
+          await handleCheckoutComplete(session)
+          break
+        }
+
+        case 'customer.subscription.updated': {
+          const subscription = event.data.object
+          await handleSubscriptionUpdate(subscription)
+          break
+        }
+
+        case 'customer.subscription.deleted': {
+          const subscription = event.data.object
+          await handleSubscriptionDeleted(subscription)
+          break
+        }
+
+        case 'invoice.payment_failed': {
+          const invoice = event.data.object
+          await handlePaymentFailed(invoice)
+          break
+        }
+
+        default:
+          console.log(`Unhandled event type: ${event.type}`)
+      }
+
+      res.json({ received: true })
+    } catch (error) {
+      console.error('Error handling webhook:', error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
+
+// Helper function: Map Stripe price to tier
+function priceToTier(priceId) {
+  // These will be set after Stripe products are created
+  const priceMap = {
+    // Pro tier price IDs (test and live)
+    'price_pro_monthly': 'pro',
+    // Unlimited tier price IDs (test and live)
+    'price_unlimited_monthly': 'unlimited',
+  }
+  
+  // Check environment variable overrides or metadata
+  // For now, we'll determine tier from the price amount
+  return priceMap[priceId] || null
+}
+
+// Helper function: Handle checkout.session.completed
+async function handleCheckoutComplete(session) {
+  const shopId = session.metadata?.shopId
+  if (!shopId) {
+    console.error('No shopId in session metadata')
+    return
+  }
+
+  const subscriptionId = session.subscription
+  const customerId = session.customer
+
+  console.log(`Checkout completed for shop ${shopId}, subscription ${subscriptionId}`)
+
+  // Get subscription details to determine tier
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || stripeSecretKey.value())
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+  const priceId = subscription.items.data[0]?.price.id
+  const amount = subscription.items.data[0]?.price.unit_amount
+
+  // Determine tier based on price amount (in cents)
+  let tier = 'pro' // default
+  if (amount === 7900) {
+    tier = 'unlimited'
+  } else if (amount === 2900) {
+    tier = 'pro'
+  }
+
+  // Update shop document
+  await db.collection('shops').doc(shopId).update({
+    subscriptionTier: tier,
+    subscriptionStatus: 'active',
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: subscriptionId,
+    stripePriceId: priceId,
+    subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+  })
+
+  console.log(`Shop ${shopId} upgraded to ${tier}`)
+}
+
+// Helper function: Handle customer.subscription.updated
+async function handleSubscriptionUpdate(subscription) {
+  const shopId = subscription.metadata?.shopId
+  if (!shopId) {
+    // Try to find shop by subscription ID
+    const shopsSnapshot = await db.collection('shops')
+      .where('stripeSubscriptionId', '==', subscription.id)
+      .limit(1)
+      .get()
+
+    if (shopsSnapshot.empty) {
+      console.error('No shop found for subscription:', subscription.id)
+      return
+    }
+
+    const shopDoc = shopsSnapshot.docs[0]
+    await updateShopSubscription(shopDoc.id, subscription)
+    return
+  }
+
+  await updateShopSubscription(shopId, subscription)
+}
+
+async function updateShopSubscription(shopId, subscription) {
+  const status = subscription.status // active, past_due, canceled, etc.
+  const cancelAtPeriodEnd = subscription.cancel_at_period_end
+  const currentPeriodEnd = subscription.current_period_end
+  const amount = subscription.items.data[0]?.price.unit_amount
+
+  // Determine tier based on price amount
+  let tier = 'pro'
+  if (amount === 7900) {
+    tier = 'unlimited'
+  } else if (amount === 2900) {
+    tier = 'pro'
+  }
+
+  const updateData = {
+    subscriptionStatus: status,
+    subscriptionTier: tier,
+    subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+  }
+
+  // If subscription is set to cancel at period end, record when it ends
+  if (cancelAtPeriodEnd && currentPeriodEnd) {
+    updateData.subscriptionEndsAt = new Date(currentPeriodEnd * 1000)
+  } else {
+    updateData.subscriptionEndsAt = null
+  }
+
+  await db.collection('shops').doc(shopId).update(updateData)
+  console.log(`Shop ${shopId} subscription updated: ${status}, tier: ${tier}`)
+}
+
+// Helper function: Handle customer.subscription.deleted
+async function handleSubscriptionDeleted(subscription) {
+  const shopId = subscription.metadata?.shopId
+  
+  let targetShopId = shopId
+  if (!targetShopId) {
+    // Try to find shop by subscription ID
+    const shopsSnapshot = await db.collection('shops')
+      .where('stripeSubscriptionId', '==', subscription.id)
+      .limit(1)
+      .get()
+
+    if (shopsSnapshot.empty) {
+      console.error('No shop found for deleted subscription:', subscription.id)
+      return
+    }
+
+    targetShopId = shopsSnapshot.docs[0].id
+  }
+
+  // Downgrade to free tier
+  await db.collection('shops').doc(targetShopId).update({
+    subscriptionTier: 'free',
+    subscriptionStatus: null,
+    stripeSubscriptionId: null,
+    stripePriceId: null,
+    subscriptionEndsAt: null,
+    subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+  })
+
+  console.log(`Shop ${targetShopId} downgraded to free tier`)
+}
+
+// Helper function: Handle invoice.payment_failed
+async function handlePaymentFailed(invoice) {
+  const subscriptionId = invoice.subscription
+  if (!subscriptionId) return
+
+  // Find shop by subscription ID
+  const shopsSnapshot = await db.collection('shops')
+    .where('stripeSubscriptionId', '==', subscriptionId)
+    .limit(1)
+    .get()
+
+  if (shopsSnapshot.empty) {
+    console.error('No shop found for failed payment, subscription:', subscriptionId)
+    return
+  }
+
+  const shopDoc = shopsSnapshot.docs[0]
+  
+  await db.collection('shops').doc(shopDoc.id).update({
+    subscriptionStatus: 'past_due',
+    subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+  })
+
+  console.log(`Shop ${shopDoc.id} marked as past_due due to failed payment`)
+}

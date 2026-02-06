@@ -8,7 +8,7 @@ function Logo({ className = '' }) {
         <Scissors className="w-[18px] h-[18px] text-white" />
       </div>
       <span className="text-xl font-extrabold tracking-tight text-slate-900">
-        Book<span className="text-blue-600">Flow</span>
+        Spot<span className="text-amber-500">Bookie</span>
       </span>
     </Link>
   )
@@ -177,7 +177,7 @@ function LandingPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-8 sm:gap-16 text-center">
             <div>
               <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">500+</div>
-              <div className="text-sm text-slate-500 font-medium">Businesses trust BookFlow</div>
+              <div className="text-sm text-slate-500 font-medium">Businesses trust SpotBookie</div>
             </div>
             <div className="hidden sm:block w-px h-10 bg-slate-200" />
             <div>
@@ -276,7 +276,7 @@ function LandingPage() {
               {
                 step: '2',
                 title: 'Set up your shop',
-                desc: 'Add your services, team, and weekly hours. BookFlow handles the rest.',
+                desc: 'Add your services, team, and weekly hours. SpotBookie handles the rest.',
                 color: 'from-violet-500 to-violet-600',
                 shadow: 'shadow-violet-500/30',
               },
@@ -308,14 +308,14 @@ function LandingPage() {
               Loved by professionals
             </h2>
             <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-              See why salons and stylists are switching to BookFlow.
+              See why salons and stylists are switching to SpotBookie.
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
             {[
               {
-                quote: "BookFlow replaced our paper appointment book. Clients love being able to book online anytime.",
+                quote: "SpotBookie replaced our paper appointment book. Clients love being able to book online anytime.",
                 name: 'Maria Santos',
                 role: 'Salon Owner',
                 initials: 'MS',
@@ -396,7 +396,7 @@ function LandingPage() {
               <a href="#how-it-works" className="hover:text-slate-900 transition-colors">How It Works</a>
             </div>
             <p className="text-xs text-slate-400">
-              © {new Date().getFullYear()} BookFlow. All rights reserved.
+              © {new Date().getFullYear()} SpotBookie. All rights reserved.
             </p>
           </div>
         </div>
