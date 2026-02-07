@@ -757,6 +757,23 @@ function Dashboard({ user }) {
   // Get currently in-progress appointments for "Now Serving" display
   const inProgressBookings = bookings.filter(b => b.status === 'in_progress')
 
+  // Get "Up Next" appointments - confirmed appointments for today, sorted by time
+  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const currentTimeMinutes = now.getHours() * 60 + now.getMinutes()
+  
+  const upNextBookings = bookings
+    .filter(b => {
+      if (b.date !== today) return false
+      if (b.status !== 'confirmed' && b.status !== undefined && b.status !== null) return false
+      // Only include appointments that haven't started yet (time is in the future)
+      const [hours, minutes] = (b.time || '00:00').split(':').map(Number)
+      const bookingTimeMinutes = hours * 60 + minutes
+      return bookingTimeMinutes >= currentTimeMinutes - 15 // Include appointments starting within 15 min ago
+    })
+    .sort((a, b) => a.time.localeCompare(b.time))
+    .slice(0, 2) // Show next 2
+
   const tabs = [
     { key: 'schedule', label: 'Schedule', icon: Calendar },
     { key: 'clients', label: 'Clients', icon: Heart },
@@ -1132,6 +1149,75 @@ function Dashboard({ user }) {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* ─── Now Serving & Up Next ─── */}
+        {activeTab === 'schedule' && (inProgressBookings.length > 0 || upNextBookings.length > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 animate-fade-in">
+            {/* Now Serving */}
+            {inProgressBookings.length > 0 && (
+              <div className="bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl p-5 text-white shadow-lg shadow-orange-500/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                    <Play className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold">Now Serving</h3>
+                </div>
+                <div className="space-y-2">
+                  {inProgressBookings.slice(0, 2).map((booking) => (
+                    <div key={booking.id} className="bg-white/10 backdrop-blur rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold">{booking.clientName}</p>
+                          <p className="text-sm text-white/80">{booking.serviceName || 'Appointment'}</p>
+                        </div>
+                        <button
+                          onClick={() => completeBooking(booking.id)}
+                          className="px-3 py-1.5 bg-white text-orange-600 rounded-lg text-sm font-semibold hover:bg-orange-50 transition-all"
+                        >
+                          Complete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Up Next */}
+            {upNextBookings.length > 0 && (
+              <div className="bg-gradient-to-br from-blue-500 to-violet-500 rounded-xl p-5 text-white shadow-lg shadow-blue-500/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold">Up Next</h3>
+                </div>
+                <div className="space-y-2">
+                  {upNextBookings.map((booking, idx) => (
+                    <div key={booking.id} className="bg-white/10 backdrop-blur rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold">{booking.clientName}</p>
+                          <p className="text-sm text-white/80">
+                            {booking.serviceName || 'Appointment'} • {formatTimeShort(booking.time)}
+                          </p>
+                        </div>
+                        {idx === 0 && (
+                          <button
+                            onClick={() => openCheckInPanel(booking)}
+                            className="px-3 py-1.5 bg-white text-blue-600 rounded-lg text-sm font-semibold hover:bg-blue-50 transition-all"
+                          >
+                            Start
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
