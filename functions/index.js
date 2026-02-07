@@ -227,6 +227,69 @@ const emailTemplates = {
       </body>
       </html>
     `
+  }),
+
+  reviewRequest: (booking, shop, reviewLinks) => ({
+    subject: `How was your visit to ${shop.name}? ⭐`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 40px 20px;">
+          <tr>
+            <td align="center">
+              <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+                <tr>
+                  <td style="background: linear-gradient(135deg, #f59e0b 0%, #eab308 100%); padding: 32px; text-align: center;">
+                    <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700;">Thanks for visiting! ⭐</h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 32px;">
+                    <p style="margin: 0 0 24px 0; color: #475569; font-size: 16px; line-height: 1.6;">
+                      Hi <strong>${booking.clientName}</strong>,
+                    </p>
+                    <p style="margin: 0 0 24px 0; color: #475569; font-size: 16px; line-height: 1.6;">
+                      We hope you enjoyed your ${booking.serviceName || 'appointment'} at <strong>${shop.name}</strong>! Your feedback helps us improve and helps others discover us.
+                    </p>
+                    <p style="margin: 0 0 24px 0; color: #475569; font-size: 16px; line-height: 1.6;">
+                      Would you take a moment to share your experience?
+                    </p>
+                    
+                    <div style="text-align: center; margin-bottom: 24px;">
+                      ${reviewLinks.google ? `
+                        <a href="${reviewLinks.google}" target="_blank" style="display: inline-block; background-color: #4285f4; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600; font-size: 16px; margin: 8px;">
+                          ⭐ Review on Google
+                        </a>
+                      ` : ''}
+                      ${reviewLinks.yelp ? `
+                        <a href="${reviewLinks.yelp}" target="_blank" style="display: inline-block; background-color: #d32323; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600; font-size: 16px; margin: 8px;">
+                          ⭐ Review on Yelp
+                        </a>
+                      ` : ''}
+                    </div>
+                    
+                    <p style="margin: 0; color: #94a3b8; font-size: 14px; text-align: center;">
+                      Thank you for your support! 🙏
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0;">
+                    <p style="margin: 0; color: #1e293b; font-weight: 600;">${shop.name}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `
   })
 }
 
@@ -341,6 +404,81 @@ exports.onBookingConfirmed = onDocumentUpdated(
         
       } catch (error) {
         console.error('Error sending confirmation email:', error)
+      }
+    }
+  }
+)
+
+// Cloud Function: Send review request when booking is completed
+exports.onBookingCompleted = onDocumentUpdated(
+  {
+    document: 'shops/{shopId}/bookings/{bookingId}',
+    secrets: [resendApiKey]
+  },
+  async (event) => {
+    const before = event.data.before.data()
+    const after = event.data.after.data()
+    
+    // Only trigger if status changed to completed (from any other status)
+    if (before.status !== 'completed' && after.status === 'completed') {
+      console.log(`Booking completed: ${event.params.bookingId}`)
+      
+      try {
+        const shopId = event.params.shopId
+        const bookingId = event.params.bookingId
+        const shopDoc = await db.collection('shops').doc(shopId).get()
+        if (!shopDoc.exists) return
+        
+        const shop = shopDoc.data()
+        const reviewSettings = shop.reviewSettings || {}
+        
+        // Check if review requests are enabled
+        if (!reviewSettings.enabled) {
+          console.log('Review requests disabled for shop')
+          return
+        }
+        
+        // Check if we have at least one review platform configured
+        if (!reviewSettings.googlePlaceId && !reviewSettings.yelpBusinessId) {
+          console.log('No review platforms configured')
+          return
+        }
+        
+        // Check if we already sent a review request for this booking
+        if (after.reviewRequestSentAt) {
+          console.log('Review request already sent for this booking')
+          return
+        }
+        
+        // Build review links
+        const reviewLinks = {}
+        if (reviewSettings.googlePlaceId) {
+          reviewLinks.google = `https://search.google.com/local/writereview?placeid=${reviewSettings.googlePlaceId}`
+        }
+        if (reviewSettings.yelpBusinessId) {
+          reviewLinks.yelp = `https://www.yelp.com/writeareview/biz/${reviewSettings.yelpBusinessId}`
+        }
+        
+        // Send review request email
+        const resend = new Resend(resendApiKey.value())
+        const template = emailTemplates.reviewRequest(after, shop, reviewLinks)
+        
+        await resend.emails.send({
+          from: 'SpotBookie <onboarding@resend.dev>',
+          to: after.clientEmail,
+          subject: template.subject,
+          html: template.html
+        })
+        
+        // Mark that we sent the review request
+        await db.collection('shops').doc(shopId).collection('bookings').doc(bookingId).update({
+          reviewRequestSentAt: FieldValue.serverTimestamp()
+        })
+        
+        console.log(`Review request sent to ${after.clientEmail}`)
+        
+      } catch (error) {
+        console.error('Error sending review request:', error)
       }
     }
   }

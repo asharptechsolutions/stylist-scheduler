@@ -4,7 +4,7 @@ import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, 
 import { signOut } from 'firebase/auth'
 import { auth, db, storage } from '../firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu, Archive, AlertTriangle, Image, Palette, Upload } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu, Archive, AlertTriangle, Image, Palette, Upload, Star, ExternalLink } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -370,6 +370,13 @@ function Dashboard({ user }) {
     if (booking) checkWaitlistMatches(booking)
   }
 
+  const completeBooking = async (bookingId) => {
+    await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
+      status: 'completed',
+      completedAt: serverTimestamp()
+    })
+  }
+
   const toggleRequireApproval = async () => {
     const newValue = !shop?.requireApproval
     try {
@@ -677,12 +684,15 @@ function Dashboard({ user }) {
       ? filteredBookings.filter(b => b.status === 'pending')
       : statusFilter === 'confirmed'
         ? filteredBookings.filter(b => !b.status || b.status === 'confirmed')
-        : filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected')
+        : statusFilter === 'completed'
+          ? filteredBookings.filter(b => b.status === 'completed')
+          : filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected')
 
   const statusCounts = {
     all: filteredBookings.length,
     pending: filteredBookings.filter(b => b.status === 'pending').length,
     confirmed: filteredBookings.filter(b => !b.status || b.status === 'confirmed').length,
+    completed: filteredBookings.filter(b => b.status === 'completed').length,
     cancelled: filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected').length,
   }
 
@@ -1530,6 +1540,187 @@ function Dashboard({ user }) {
               </div>
             </div>
 
+            {/* Review Requests Settings */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+                <Star className="w-5 h-5 text-amber-500" />
+                Review Requests
+              </h2>
+              <p className="text-sm text-slate-500 mb-6">Automatically ask clients to leave reviews after their appointment</p>
+
+              <div className="space-y-4">
+                {/* Enable Toggle */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="pr-4">
+                    <h3 className="font-semibold text-slate-900 text-sm">Enable Review Requests</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Send an email asking for reviews after completed appointments
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const current = shop?.reviewSettings || {}
+                      const newEnabled = !current.enabled
+                      try {
+                        await updateDoc(doc(db, 'shops', shopId), {
+                          reviewSettings: { ...current, enabled: newEnabled }
+                        })
+                        setShop(prev => ({
+                          ...prev,
+                          reviewSettings: { ...(prev.reviewSettings || {}), enabled: newEnabled }
+                        }))
+                      } catch (err) {
+                        console.error('Error updating review settings:', err)
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                      shop?.reviewSettings?.enabled ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                        shop?.reviewSettings?.enabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {shop?.reviewSettings?.enabled && (
+                  <>
+                    {/* Delay Setting */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className="pr-4">
+                        <h3 className="font-semibold text-slate-900 text-sm">Send After</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          How long after the appointment to send the review request
+                        </p>
+                      </div>
+                      <select
+                        value={shop?.reviewSettings?.delayHours || 2}
+                        onChange={async (e) => {
+                          const hours = parseInt(e.target.value)
+                          const current = shop?.reviewSettings || {}
+                          try {
+                            await updateDoc(doc(db, 'shops', shopId), {
+                              reviewSettings: { ...current, delayHours: hours }
+                            })
+                            setShop(prev => ({
+                              ...prev,
+                              reviewSettings: { ...(prev.reviewSettings || {}), delayHours: hours }
+                            }))
+                          } catch (err) {
+                            console.error('Error updating delay hours:', err)
+                          }
+                        }}
+                        className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm font-medium flex-shrink-0"
+                      >
+                        <option value="1">1 hour</option>
+                        <option value="2">2 hours</option>
+                        <option value="4">4 hours</option>
+                        <option value="24">24 hours</option>
+                        <option value="48">48 hours</option>
+                      </select>
+                    </div>
+
+                    {/* Google Place ID */}
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-slate-900 text-sm">Google Place ID</h3>
+                      <input
+                        type="text"
+                        value={shop?.reviewSettings?.googlePlaceId || ''}
+                        onChange={async (e) => {
+                          const googlePlaceId = e.target.value
+                          const current = shop?.reviewSettings || {}
+                          try {
+                            await updateDoc(doc(db, 'shops', shopId), {
+                              reviewSettings: { ...current, googlePlaceId }
+                            })
+                            setShop(prev => ({
+                              ...prev,
+                              reviewSettings: { ...(prev.reviewSettings || {}), googlePlaceId }
+                            }))
+                          } catch (err) {
+                            console.error('Error updating Google Place ID:', err)
+                          }
+                        }}
+                        placeholder="e.g., ChIJN1t_tDeuEmsRUsoyG83frY4"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      />
+                      <p className="text-xs text-slate-500">
+                        <a 
+                          href="https://developers.google.com/maps/documentation/places/web-service/place-id" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                        >
+                          How to find your Place ID <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </p>
+                    </div>
+
+                    {/* Yelp Business ID (Optional) */}
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-slate-900 text-sm">Yelp Business ID <span className="text-slate-400 font-normal">(optional)</span></h3>
+                      <input
+                        type="text"
+                        value={shop?.reviewSettings?.yelpBusinessId || ''}
+                        onChange={async (e) => {
+                          const yelpBusinessId = e.target.value
+                          const current = shop?.reviewSettings || {}
+                          try {
+                            await updateDoc(doc(db, 'shops', shopId), {
+                              reviewSettings: { ...current, yelpBusinessId }
+                            })
+                            setShop(prev => ({
+                              ...prev,
+                              reviewSettings: { ...(prev.reviewSettings || {}), yelpBusinessId }
+                            }))
+                          } catch (err) {
+                            console.error('Error updating Yelp Business ID:', err)
+                          }
+                        }}
+                        placeholder="e.g., joes-barbershop-new-york"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      />
+                      <p className="text-xs text-slate-500">
+                        Found in your Yelp business page URL: yelp.com/biz/<strong>your-business-id</strong>
+                      </p>
+                    </div>
+
+                    {/* Preview */}
+                    {(shop?.reviewSettings?.googlePlaceId || shop?.reviewSettings?.yelpBusinessId) && (
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                        <p className="text-sm font-medium text-amber-800 mb-2">📧 Review links will go to:</p>
+                        <div className="space-y-1 text-sm">
+                          {shop?.reviewSettings?.googlePlaceId && (
+                            <a 
+                              href={`https://search.google.com/local/writereview?placeid=${shop.reviewSettings.googlePlaceId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline flex items-center gap-1"
+                            >
+                              Google Reviews <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                          {shop?.reviewSettings?.yelpBusinessId && (
+                            <a 
+                              href={`https://www.yelp.com/writeareview/biz/${shop.reviewSettings.yelpBusinessId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline flex items-center gap-1"
+                            >
+                              Yelp Reviews <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* Stripe Connect / Payments Settings */}
             <div className="bg-white rounded-xl border border-slate-200 p-6">
               <StripeConnectSettings shopId={shopId} shop={shop} slug={slug} />
@@ -1927,6 +2118,7 @@ function Dashboard({ user }) {
                     { key: 'all', label: 'All' },
                     { key: 'pending', label: 'Pending' },
                     { key: 'confirmed', label: 'Confirmed' },
+                    { key: 'completed', label: 'Completed' },
                     { key: 'cancelled', label: 'Cancelled' },
                   ].map((tab) => (
                     <button
@@ -1972,12 +2164,14 @@ function Dashboard({ user }) {
                         const statusStyles = {
                           pending: 'bg-amber-50 text-amber-700 border-amber-200',
                           confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                          completed: 'bg-blue-50 text-blue-700 border-blue-200',
                           rejected: 'bg-red-50 text-red-700 border-red-200',
                           cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
                         }
                         const statusLabels = {
                           pending: 'Pending',
                           confirmed: 'Confirmed',
+                          completed: 'Completed',
                           rejected: 'Rejected',
                           cancelled: 'Cancelled',
                         }
@@ -2025,13 +2219,22 @@ function Dashboard({ user }) {
                                   </>
                                 )}
                                 {status === 'confirmed' && (
-                                  <button
-                                    onClick={() => cancelBooking(booking.id)}
-                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                    title="Cancel booking"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => completeBooking(booking.id)}
+                                      className="opacity-0 group-hover:opacity-100 p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
+                                      title="Mark as completed"
+                                    >
+                                      <Check className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => cancelBooking(booking.id)}
+                                      className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                      title="Cancel booking"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </div>
