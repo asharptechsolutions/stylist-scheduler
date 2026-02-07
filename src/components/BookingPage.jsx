@@ -1493,8 +1493,26 @@ function BookingPage() {
               </div>
             </div>
 
-            {/* Show warning if shop hasn't set up Stripe Connect */}
-            {!shop?.payoutsEnabled && (
+            {/* Free tier without Stripe Connect - block booking entirely */}
+            {!shop?.payoutsEnabled && (!shop?.subscriptionTier || shop?.subscriptionTier === 'free') && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <CreditCard className="w-4 h-4 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-red-800 text-sm">Booking Unavailable</p>
+                    <p className="text-xs text-red-700 mt-1">
+                      This shop is still setting up their payment system and cannot accept bookings yet.
+                      Please check back later or contact the shop directly.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Paid tier without Stripe Connect - allow booking without deposit */}
+            {!shop?.payoutsEnabled && shop?.subscriptionTier && shop?.subscriptionTier !== 'free' && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -1544,7 +1562,7 @@ function BookingPage() {
             {!shop?.payoutsEnabled && (
               <button
                 onClick={() => setShowPaymentForm(false)}
-                className="w-full px-5 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200"
+                className="w-full px-5 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-semibold transition-all border border-slate-200 mt-4"
               >
                 ← Back
               </button>
