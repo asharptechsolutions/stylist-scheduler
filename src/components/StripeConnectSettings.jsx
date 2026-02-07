@@ -93,8 +93,8 @@ function StripeConnectSettings({ shopId, shop: initialShop, slug }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shopId,
-          returnUrl: `${window.location.origin}/#/shop/${slug}/dashboard?connect=return`,
-          refreshUrl: `${window.location.origin}/#/shop/${slug}/dashboard?connect=refresh`,
+          returnUrl: `${window.location.origin}/stylist-scheduler/#/shop/${slug}/dashboard?connect=return`,
+          refreshUrl: `${window.location.origin}/stylist-scheduler/#/shop/${slug}/dashboard?connect=refresh`,
         }),
       })
 
