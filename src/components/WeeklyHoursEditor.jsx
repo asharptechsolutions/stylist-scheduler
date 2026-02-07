@@ -358,30 +358,34 @@ function WeeklyHoursEditor({ shopId, staffId, staffName, weeklyHours, onClose })
               {day.enabled && breaks.length > 0 && (
                 <div className="mt-2 ml-14 space-y-2">
                   {breaks.map((brk, idx) => (
-                    <div key={idx} className="flex items-center gap-2 animate-fade-in">
-                      <Coffee className="w-3.5 h-3.5 text-amber-500" />
-                      <span className="text-xs text-slate-500">Break {idx + 1}:</span>
-                      <input
-                        type="time"
-                        value={brk.start}
-                        onChange={(e) => updateBreak(key, idx, 'start', e.target.value)}
-                        className="px-2 py-1 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-                      />
-                      <span className="text-slate-400 text-xs">–</span>
-                      <input
-                        type="time"
-                        value={brk.end}
-                        onChange={(e) => updateBreak(key, idx, 'end', e.target.value)}
-                        className="px-2 py-1 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeBreak(key, idx)}
-                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
-                        title="Remove break"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                    <div key={idx} className="flex items-start gap-2 animate-fade-in">
+                      <Coffee className="w-3.5 h-3.5 text-amber-500 mt-2" />
+                      <div className="flex-1">
+                        <span className="text-xs text-slate-500 block mb-1">Break {idx + 1}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <input
+                            type="time"
+                            value={brk.start}
+                            onChange={(e) => updateBreak(key, idx, 'start', e.target.value)}
+                            className="px-2 py-1 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                          />
+                          <span className="text-slate-400 text-xs">to</span>
+                          <input
+                            type="time"
+                            value={brk.end}
+                            onChange={(e) => updateBreak(key, idx, 'end', e.target.value)}
+                            className="px-2 py-1 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeBreak(key, idx)}
+                            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                            title="Remove break"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
