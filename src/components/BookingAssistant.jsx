@@ -324,18 +324,7 @@ export default function BookingAssistant({ services, staffMembers, shop, onSelec
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
-  // Auto-show preview bubble after 3s (user must click to open)
-  useEffect(() => {
-    const previewTimer = setTimeout(() => {
-      if (!isOpen && !previewDismissed) {
-        setShowPreview(true)
-      }
-    }, 3000)
-
-    return () => {
-      clearTimeout(previewTimer)
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Preview bubble disabled - just show the main chat button
 
   // Focus input when chat opens
   useEffect(() => {
