@@ -5,7 +5,7 @@ import { db } from '../firebase'
 import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat, CreditCard } from 'lucide-react'
 import Calendar from './Calendar'
 import WaitlistForm from './WaitlistForm'
-import BookingAssistant from './BookingAssistant'
+// import BookingAssistant from './BookingAssistant' // Disabled - too intrusive
 import PaymentForm from './PaymentForm'
 import { generateAllSlots, filterBookedSlots, mergeSlots } from '../utils/slotGenerator'
 
@@ -1573,13 +1573,6 @@ function BookingPage() {
         </div>
       </footer>
 
-      {/* ─── Booking Assistant Chatbot ─── */}
-      <BookingAssistant
-        services={services}
-        staffMembers={staffMembers}
-        shop={shop}
-        onSelectService={handleSelectService}
-      />
     </div>
   )
 }
