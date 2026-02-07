@@ -95,8 +95,8 @@ function SubscriptionTab({ shopId, shop: initialShop, slug }) {
         body: JSON.stringify({
           shopId,
           priceId: STRIPE_PRICES[tier],
-          successUrl: `${window.location.origin}/#/shop/${slug}/dashboard?subscription=success`,
-          cancelUrl: `${window.location.origin}/#/shop/${slug}/dashboard?subscription=canceled`,
+          successUrl: `${window.location.origin}/stylist-scheduler/#/shop/${slug}/dashboard?subscription=success`,
+          cancelUrl: `${window.location.origin}/stylist-scheduler/#/shop/${slug}/dashboard?subscription=canceled`,
         }),
       })
 
@@ -125,7 +125,7 @@ function SubscriptionTab({ shopId, shop: initialShop, slug }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shopId,
-          returnUrl: `${window.location.origin}/#/shop/${slug}/dashboard`,
+          returnUrl: `${window.location.origin}/stylist-scheduler/#/shop/${slug}/dashboard`,
         }),
       })
 
