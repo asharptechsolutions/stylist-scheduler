@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -53,6 +53,7 @@ function Dashboard({ user }) {
   const [waitlist, setWaitlist] = useState([])
   const [waitlistAlert, setWaitlistAlert] = useState(null) // { matches, slot }
   const [recurringCancelModal, setRecurringCancelModal] = useState(null) // { bookingId, recurringGroupId }
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
@@ -609,8 +610,15 @@ function Dashboard({ user }) {
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="h-16 flex items-center justify-between">
-            {/* Left: Shop name */}
+            {/* Left: Shop name + Mobile menu button */}
             <div className="flex items-center gap-3">
+              {/* Mobile menu button */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
               <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-violet-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-600/20">
                 {(shop.name || '')[0]?.toUpperCase() || 'S'}
               </div>
@@ -620,10 +628,18 @@ function Dashboard({ user }) {
               </div>
             </div>
 
-            {/* Center: Tabs */}
-            <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+            {/* Center: Tabs (hidden on mobile) */}
+            <div className="hidden lg:flex items-center bg-slate-100 p-1 rounded-xl">
               {tabs.map((tab) => {
                 const Icon = tab.icon
+                const getBadgeCount = () => {
+                  if (tab.key === 'schedule' && pendingCount > 0) return { count: pendingCount, color: 'bg-amber-500' }
+                  if (tab.key === 'clients' && atRiskClientCount > 0) return { count: atRiskClientCount, color: 'bg-orange-500' }
+                  if (tab.key === 'walkins' && walkinsCount > 0) return { count: walkinsCount, color: 'bg-emerald-500' }
+                  if (tab.key === 'waitlist' && waitlistWaitingCount > 0) return { count: waitlistWaitingCount, color: 'bg-blue-500' }
+                  return null
+                }
+                const badge = getBadgeCount()
                 return (
                   <button
                     key={tab.key}
@@ -635,25 +651,10 @@ function Dashboard({ user }) {
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                    {tab.key === 'schedule' && pendingCount > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full leading-none">
-                        {pendingCount}
-                      </span>
-                    )}
-                    {tab.key === 'clients' && atRiskClientCount > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded-full leading-none">
-                        {atRiskClientCount}
-                      </span>
-                    )}
-                    {tab.key === 'walkins' && walkinsCount > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 bg-emerald-500 text-white text-[10px] font-bold rounded-full leading-none">
-                        {walkinsCount}
-                      </span>
-                    )}
-                    {tab.key === 'waitlist' && waitlistWaitingCount > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 bg-blue-500 text-white text-[10px] font-bold rounded-full leading-none">
-                        {waitlistWaitingCount}
+                    <span>{tab.label}</span>
+                    {badge && (
+                      <span className={`ml-1 px-1.5 py-0.5 ${badge.color} text-white text-[10px] font-bold rounded-full leading-none`}>
+                        {badge.count}
                       </span>
                     )}
                   </button>
@@ -681,6 +682,98 @@ function Dashboard({ user }) {
           </div>
         </div>
       </nav>
+
+      {/* ─── Mobile Menu Overlay ─── */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          
+          {/* Slide-out panel */}
+          <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-2xl animate-slide-in-left">
+            {/* Header */}
+            <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-violet-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
+                  {(shop.name || '')[0]?.toUpperCase() || 'S'}
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900">{shop.name}</h2>
+                  <p className="text-xs text-slate-500">Dashboard</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Menu items */}
+            <div className="p-3 space-y-1">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                const getBadgeCount = () => {
+                  if (tab.key === 'schedule' && pendingCount > 0) return { count: pendingCount, color: 'bg-amber-500' }
+                  if (tab.key === 'clients' && atRiskClientCount > 0) return { count: atRiskClientCount, color: 'bg-orange-500' }
+                  if (tab.key === 'walkins' && walkinsCount > 0) return { count: walkinsCount, color: 'bg-emerald-500' }
+                  if (tab.key === 'waitlist' && waitlistWaitingCount > 0) return { count: waitlistWaitingCount, color: 'bg-blue-500' }
+                  return null
+                }
+                const badge = getBadgeCount()
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => {
+                      setActiveTab(tab.key)
+                      setMobileMenuOpen(false)
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all ${
+                      activeTab === tab.key
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 ${activeTab === tab.key ? 'text-blue-600' : 'text-slate-400'}`} />
+                    <span className="flex-1">{tab.label}</span>
+                    {badge && (
+                      <span className={`px-2 py-0.5 ${badge.color} text-white text-xs font-bold rounded-full`}>
+                        {badge.count}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Bottom actions */}
+            <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-slate-200 bg-slate-50">
+              <Link
+                to={`/shop/${slug}`}
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-white rounded-xl font-medium transition-all"
+              >
+                <Eye className="w-5 h-5 text-slate-400" />
+                View Public Page
+              </Link>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false)
+                  handleLogout()
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl font-medium transition-all"
+              >
+                <LogOut className="w-5 h-5" />
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* ─── Stats Cards ─── */}

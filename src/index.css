@@ -119,6 +119,15 @@ h1, h2, h3, h4, h5, h6 {
   animation: slideDown 0.3s ease-out both;
 }
 
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.3s ease-out both;
+}
+
 .animate-float {
   animation: float 3s ease-in-out infinite;
 }
