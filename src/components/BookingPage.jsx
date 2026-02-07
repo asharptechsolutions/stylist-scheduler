@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat, CreditCard } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Lock, CheckCircle, ArrowLeft, DollarSign, Tag, Users, Scissors, CalendarCheck, PartyPopper, ListPlus, Repeat, CreditCard, Archive, Image, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import Calendar from './Calendar'
 import WaitlistForm from './WaitlistForm'
 import BookingAssistant from './BookingAssistant'
@@ -697,6 +697,31 @@ function BookingPage() {
           <h1 className="text-2xl font-bold text-slate-900 mb-2">Shop Not Found</h1>
           <p className="text-slate-600 mb-6">
             We couldn't find a shop with the URL "<span className="font-mono text-blue-600">{slug}</span>".
+          </p>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Go Home
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  /* ── Shop Archived ── */
+  if (shop?.archived) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-5">
+        <div className="bg-white rounded-2xl p-10 shadow-lg border border-amber-200 text-center max-w-md w-full animate-scale-in">
+          <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <Archive className="w-8 h-8 text-amber-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Shop Unavailable</h1>
+          <p className="text-slate-600 mb-6">
+            <span className="font-semibold">{shop.name}</span> is currently not accepting new bookings.
+            Please check back later or contact the shop directly.
           </p>
           <Link
             to="/"

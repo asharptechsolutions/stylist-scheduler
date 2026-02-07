@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { collection, getDocs, doc, updateDoc, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, serverTimestamp } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
 import {
   Shield, Store, CreditCard, DollarSign, Users, Search, ExternalLink,
   LogOut, Crown, Zap, Gift, TrendingUp, Calendar, Mail, Eye,
   ToggleLeft, ToggleRight, AlertTriangle, CheckCircle, Clock,
-  BarChart3, PieChart, ArrowUpRight, Settings, Trash2, Ban, RefreshCw, X
+  BarChart3, PieChart, ArrowUpRight, Settings, Trash2, Ban, RefreshCw, X, Archive
 } from 'lucide-react'
 
 // Admin emails that can access this panel
@@ -35,6 +35,10 @@ function AdminPanel({ user }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedShop, setSelectedShop] = useState(null)
   const [actionLoading, setActionLoading] = useState(null)
+  const [deleteConfirmShop, setDeleteConfirmShop] = useState(null)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
+  const [shopBookingCounts, setShopBookingCounts] = useState({})
+  const [forceDelete, setForceDelete] = useState(false)
 
   // Check if user is admin
   const isAdmin = user && ADMIN_EMAILS.includes(user.email?.toLowerCase())
@@ -172,6 +176,73 @@ function AdminPanel({ user }) {
       ))
     } catch (err) {
       console.error('Error toggling shop status:', err)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const toggleShopArchived = async (shopId, currentArchived) => {
+    setActionLoading(shopId)
+    try {
+      await updateDoc(doc(db, 'shops', shopId), {
+        archived: !currentArchived,
+        archivedAt: !currentArchived ? serverTimestamp() : null
+      })
+      setShops(prev => prev.map(s =>
+        s.id === shopId ? { ...s, archived: !currentArchived, archivedAt: !currentArchived ? new Date().toISOString() : null } : s
+      ))
+      if (selectedShop?.id === shopId) {
+        setSelectedShop(prev => ({ ...prev, archived: !currentArchived }))
+      }
+    } catch (err) {
+      console.error('Error toggling shop archive status:', err)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const checkUpcomingBookings = async (shopId) => {
+    try {
+      const bookingsSnapshot = await getDocs(collection(db, 'shops', shopId, 'bookings'))
+      const today = new Date().toISOString().split('T')[0]
+      const upcomingBookings = bookingsSnapshot.docs.filter(doc => {
+        const data = doc.data()
+        return data.date >= today && 
+          (data.status === 'pending' || data.status === 'confirmed' || !data.status)
+      })
+      setShopBookingCounts(prev => ({ ...prev, [shopId]: upcomingBookings.length }))
+      return upcomingBookings.length
+    } catch (err) {
+      console.error('Error checking bookings:', err)
+      return 0
+    }
+  }
+
+  const deleteShopPermanently = async (shopId) => {
+    setActionLoading(shopId)
+    try {
+      // Delete subcollections
+      const subcollections = ['staff', 'bookings', 'availability', 'waitlist', 'schedulePresets', 'services', 'walkins', 'clientNotes']
+      
+      for (const subcol of subcollections) {
+        const subSnapshot = await getDocs(collection(db, 'shops', shopId, subcol))
+        for (const subDoc of subSnapshot.docs) {
+          await deleteDoc(doc(db, 'shops', shopId, subcol, subDoc.id))
+        }
+      }
+      
+      // Delete the shop document
+      await deleteDoc(doc(db, 'shops', shopId))
+      
+      // Update local state
+      setShops(prev => prev.filter(s => s.id !== shopId))
+      setSelectedShop(null)
+      setDeleteConfirmShop(null)
+      setDeleteConfirmName('')
+      setForceDelete(false)
+    } catch (err) {
+      console.error('Error deleting shop:', err)
+      alert('An error occurred while deleting the shop. Please try again.')
     } finally {
       setActionLoading(null)
     }
@@ -504,6 +575,11 @@ function AdminPanel({ user }) {
                               <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${tierInfo.color}`}>
                                 {tierInfo.label}
                               </span>
+                              {shop.archived && (
+                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                                  Archived
+                                </span>
+                              )}
                               {shop.disabled && (
                                 <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
                                   Disabled
@@ -877,6 +953,142 @@ function AdminPanel({ user }) {
                   <>
                     <Ban className="w-4 h-4" />
                     Disable Shop
+                  </>
+                )}
+              </button>
+
+              {/* Archive/Unarchive Button */}
+              <button
+                onClick={() => toggleShopArchived(selectedShop.id, selectedShop.archived)}
+                disabled={actionLoading === selectedShop.id}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium text-sm transition-all ${
+                  selectedShop.archived
+                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                    : 'bg-amber-100 hover:bg-amber-200 text-amber-700'
+                }`}
+              >
+                <Archive className="w-4 h-4" />
+                {selectedShop.archived ? 'Unarchive Shop' : 'Archive Shop'}
+              </button>
+
+              {/* Danger Zone - Delete */}
+              <div className="pt-4 mt-4 border-t border-red-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                  <span className="text-xs font-bold text-red-600 uppercase tracking-wider">Danger Zone</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    const count = await checkUpcomingBookings(selectedShop.id)
+                    setDeleteConfirmShop(selectedShop)
+                    setDeleteConfirmName('')
+                    setForceDelete(false)
+                  }}
+                  disabled={actionLoading === selectedShop.id}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium text-sm transition-all shadow-md shadow-red-600/20"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Shop Forever
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmShop && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-scale-in">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Delete Shop Permanently</h3>
+                <p className="text-sm text-slate-500">/{deleteConfirmShop.slug}</p>
+              </div>
+            </div>
+
+            {/* Warning about upcoming bookings */}
+            {shopBookingCounts[deleteConfirmShop.id] > 0 && (
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  <span className="font-semibold text-amber-800">
+                    {shopBookingCounts[deleteConfirmShop.id]} Upcoming Booking{shopBookingCounts[deleteConfirmShop.id] !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <p className="text-sm text-amber-700 mb-3">
+                  This shop has active bookings. Deleting it will cancel all bookings and notify no one.
+                </p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={forceDelete}
+                    onChange={(e) => setForceDelete(e.target.checked)}
+                    className="w-4 h-4 rounded border-amber-400 text-red-600 focus:ring-red-500"
+                  />
+                  <span className="text-sm font-medium text-amber-800">
+                    I understand and want to force delete anyway
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-sm text-red-700 mb-2">
+                <strong>This will permanently delete:</strong>
+              </p>
+              <ul className="text-sm text-red-600 space-y-1 ml-4 list-disc">
+                <li>Shop and all settings</li>
+                <li>All staff members</li>
+                <li>All bookings (past and future)</li>
+                <li>All time slots and schedule presets</li>
+                <li>All waitlist entries</li>
+                <li>All client notes</li>
+              </ul>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Type "<span className="text-red-600">{deleteConfirmShop.name}</span>" to confirm:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                placeholder="Enter shop name"
+                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all text-sm"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setDeleteConfirmShop(null)
+                  setDeleteConfirmName('')
+                  setForceDelete(false)
+                }}
+                className="flex-1 px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-sm transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteShopPermanently(deleteConfirmShop.id)}
+                disabled={
+                  deleteConfirmName !== deleteConfirmShop.name || 
+                  actionLoading === deleteConfirmShop.id ||
+                  (shopBookingCounts[deleteConfirmShop.id] > 0 && !forceDelete)
+                }
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-sm transition-all shadow-md shadow-red-600/20"
+              >
+                {actionLoading === deleteConfirmShop.id ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete Forever
                   </>
                 )}
               </button>

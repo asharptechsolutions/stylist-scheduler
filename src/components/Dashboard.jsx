@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu, Archive, AlertTriangle } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -1383,6 +1383,137 @@ function Dashboard({ user }) {
             {/* Stripe Connect / Payments Settings */}
             <div className="bg-white rounded-xl border border-slate-200 p-6">
               <StripeConnectSettings shopId={shopId} shop={shop} slug={slug} />
+            </div>
+
+            {/* Archive Shop Section */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-lg font-bold text-slate-900 mb-1">Shop Visibility</h2>
+              <p className="text-sm text-slate-500 mb-6">Temporarily hide your shop from public view</p>
+
+              {shop?.archived ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Archive className="w-5 h-5 text-amber-600" />
+                      <span className="font-semibold text-amber-800">Shop is Archived</span>
+                    </div>
+                    <p className="text-sm text-amber-700">
+                      Your shop is currently hidden from the public booking page. You can still access your dashboard to view history.
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await updateDoc(doc(db, 'shops', shopId), {
+                          archived: false,
+                          archivedAt: null
+                        })
+                        setShop(prev => ({ ...prev, archived: false, archivedAt: null }))
+                      } catch (err) {
+                        console.error('Error unarchiving shop:', err)
+                      }
+                    }}
+                    className="flex items-center justify-center gap-2 w-full px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm shadow-md shadow-emerald-600/20 transition-all"
+                  >
+                    <Archive className="w-4 h-4" />
+                    Unarchive Shop
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={async () => {
+                    if (window.confirm('Are you sure you want to archive your shop? It will be hidden from the public booking page.')) {
+                      try {
+                        await updateDoc(doc(db, 'shops', shopId), {
+                          archived: true,
+                          archivedAt: serverTimestamp()
+                        })
+                        setShop(prev => ({ ...prev, archived: true, archivedAt: new Date().toISOString() }))
+                      } catch (err) {
+                        console.error('Error archiving shop:', err)
+                      }
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2 w-full px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold text-sm shadow-md shadow-amber-500/20 transition-all"
+                >
+                  <Archive className="w-4 h-4" />
+                  Archive Shop
+                </button>
+              )}
+
+              <p className="text-xs text-slate-400 mt-3">
+                Archiving hides your shop but preserves all data. You can unarchive at any time.
+              </p>
+            </div>
+
+            {/* Danger Zone - Delete Shop */}
+            <div className="bg-white rounded-xl border-2 border-red-200 p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+                <h2 className="text-lg font-bold text-red-600">Danger Zone</h2>
+              </div>
+              <p className="text-sm text-slate-500 mb-6">Irreversible actions that will permanently affect your shop</p>
+
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl mb-4">
+                <h3 className="font-semibold text-red-800 mb-2">Delete Shop Permanently</h3>
+                <p className="text-sm text-red-700 mb-3">
+                  This will permanently delete your shop, all staff, bookings, time slots, and settings.
+                  <strong> This cannot be undone.</strong>
+                </p>
+                <button
+                  onClick={() => {
+                    // Check for upcoming bookings first
+                    const today = new Date().toISOString().split('T')[0]
+                    const upcomingBookings = bookings.filter(b => 
+                      b.date >= today && 
+                      (b.status === 'pending' || b.status === 'confirmed' || !b.status)
+                    )
+                    
+                    if (upcomingBookings.length > 0) {
+                      alert(`Cannot delete shop: You have ${upcomingBookings.length} upcoming booking${upcomingBookings.length !== 1 ? 's' : ''}. Please cancel or complete all upcoming bookings before deleting your shop.`)
+                      return
+                    }
+
+                    const confirmName = window.prompt(
+                      `To delete your shop, type "${shop.name}" below:\n\n⚠️ WARNING: This will permanently delete:\n• Your shop and all settings\n• All staff members\n• All bookings (past and future)\n• All time slots\n• All waitlist entries\n• All schedule presets`
+                    )
+                    
+                    if (confirmName === shop.name) {
+                      // Perform cascading delete
+                      const deleteShop = async () => {
+                        try {
+                          // Delete subcollections
+                          const subcollections = ['staff', 'bookings', 'availability', 'waitlist', 'schedulePresets', 'services', 'walkins', 'clientNotes']
+                          
+                          for (const subcol of subcollections) {
+                            const subSnapshot = await getDocs(collection(db, 'shops', shopId, subcol))
+                            for (const subDoc of subSnapshot.docs) {
+                              await deleteDoc(doc(db, 'shops', shopId, subcol, subDoc.id))
+                            }
+                          }
+                          
+                          // Delete the shop document
+                          await deleteDoc(doc(db, 'shops', shopId))
+                          
+                          // Sign out and redirect
+                          await signOut(auth)
+                          navigate('/', { replace: true })
+                        } catch (err) {
+                          console.error('Error deleting shop:', err)
+                          alert('An error occurred while deleting the shop. Please try again.')
+                        }
+                      }
+                      deleteShop()
+                    } else if (confirmName !== null) {
+                      alert('Shop name did not match. Deletion cancelled.')
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2 w-full px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold text-sm shadow-md shadow-red-600/20 transition-all"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Shop Forever
+                </button>
+              </div>
             </div>
           </div>
         )}
