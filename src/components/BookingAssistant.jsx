@@ -324,7 +324,7 @@ export default function BookingAssistant({ services, staffMembers, shop, onSelec
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
-  // Auto-show preview bubble after 3s, auto-open after 5s (once per session)
+  // Auto-show preview bubble after 3s (user must click to open)
   useEffect(() => {
     const previewTimer = setTimeout(() => {
       if (!isOpen && !previewDismissed) {
@@ -332,25 +332,8 @@ export default function BookingAssistant({ services, staffMembers, shop, onSelec
       }
     }, 3000)
 
-    const autoOpenTimer = setTimeout(() => {
-      if (!hasAutoOpened) {
-        setHasAutoOpened(true)
-        setShowPreview(false)
-        setIsOpen(true)
-        setMessages([
-          {
-            id: 'welcome',
-            sender: 'bot',
-            text: `Hi! 👋 Welcome to ${shopName}. I can help you find the right service and book an appointment. What are you looking for?`,
-            quickReplies: ['View Services', 'View Staff', 'How to Book'],
-          },
-        ])
-      }
-    }, 5000)
-
     return () => {
       clearTimeout(previewTimer)
-      clearTimeout(autoOpenTimer)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
