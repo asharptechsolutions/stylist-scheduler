@@ -4,7 +4,7 @@ import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, 
 import { signOut } from 'firebase/auth'
 import { auth, db, storage } from '../firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu, Archive, AlertTriangle, Image, Palette, Upload, Star, ExternalLink } from 'lucide-react'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu, Archive, AlertTriangle, Image, Palette, Upload, Star, ExternalLink, Play, FileText } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -65,6 +65,9 @@ function Dashboard({ user }) {
   const [recurringCancelModal, setRecurringCancelModal] = useState(null) // { bookingId, recurringGroupId }
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [checkInPanel, setCheckInPanel] = useState(null) // booking object when panel is open
+  const [clientNotes, setClientNotes] = useState([])
+  const [clientHistory, setClientHistory] = useState([])
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
@@ -375,6 +378,58 @@ function Dashboard({ user }) {
       status: 'completed',
       completedAt: serverTimestamp()
     })
+    setCheckInPanel(null) // Close panel if open
+  }
+
+  const startAppointment = async (bookingId) => {
+    await updateDoc(doc(db, 'shops', shopId, 'bookings', bookingId), {
+      status: 'in_progress',
+      startedAt: serverTimestamp()
+    })
+  }
+
+  const openCheckInPanel = async (booking) => {
+    setCheckInPanel(booking)
+    
+    // Fetch client notes for this client email
+    try {
+      const notesSnapshot = await getDocs(
+        query(
+          collection(db, 'shops', shopId, 'clientNotes'),
+          where('clientEmail', '==', booking.clientEmail)
+        )
+      )
+      const notes = notesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      setClientNotes(notes)
+    } catch (err) {
+      console.error('Error fetching client notes:', err)
+      setClientNotes([])
+    }
+
+    // Fetch client history (past bookings)
+    try {
+      const historySnapshot = await getDocs(
+        query(
+          collection(db, 'shops', shopId, 'bookings'),
+          where('clientEmail', '==', booking.clientEmail)
+        )
+      )
+      const history = historySnapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(b => b.id !== booking.id && (b.status === 'completed' || b.status === 'confirmed' || !b.status))
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 5)
+      setClientHistory(history)
+    } catch (err) {
+      console.error('Error fetching client history:', err)
+      setClientHistory([])
+    }
+  }
+
+  const closeCheckInPanel = () => {
+    setCheckInPanel(null)
+    setClientNotes([])
+    setClientHistory([])
   }
 
   const toggleRequireApproval = async () => {
@@ -684,17 +739,23 @@ function Dashboard({ user }) {
       ? filteredBookings.filter(b => b.status === 'pending')
       : statusFilter === 'confirmed'
         ? filteredBookings.filter(b => !b.status || b.status === 'confirmed')
-        : statusFilter === 'completed'
-          ? filteredBookings.filter(b => b.status === 'completed')
-          : filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected')
+        : statusFilter === 'in_progress'
+          ? filteredBookings.filter(b => b.status === 'in_progress')
+          : statusFilter === 'completed'
+            ? filteredBookings.filter(b => b.status === 'completed')
+            : filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected')
 
   const statusCounts = {
     all: filteredBookings.length,
     pending: filteredBookings.filter(b => b.status === 'pending').length,
     confirmed: filteredBookings.filter(b => !b.status || b.status === 'confirmed').length,
+    in_progress: filteredBookings.filter(b => b.status === 'in_progress').length,
     completed: filteredBookings.filter(b => b.status === 'completed').length,
     cancelled: filteredBookings.filter(b => b.status === 'cancelled' || b.status === 'rejected').length,
   }
+  
+  // Get currently in-progress appointments for "Now Serving" display
+  const inProgressBookings = bookings.filter(b => b.status === 'in_progress')
 
   const tabs = [
     { key: 'schedule', label: 'Schedule', icon: Calendar },
@@ -873,6 +934,175 @@ function Dashboard({ user }) {
               >
                 <LogOut className="w-5 h-5" />
                 Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Check-In Panel (Slide-out) ─── */}
+      {checkInPanel && (
+        <div className="fixed inset-0 z-50">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={closeCheckInPanel}
+          />
+          
+          {/* Slide-out panel */}
+          <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl animate-slide-in-right overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Appointment Check-In</h2>
+                  <p className="text-sm text-slate-500">{checkInPanel.serviceName || 'Appointment'}</p>
+                </div>
+                <button
+                  onClick={closeCheckInPanel}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Client Info */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  Client Information
+                </h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                      <span className="text-blue-700 font-bold">
+                        {(checkInPanel.clientName || '').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">{checkInPanel.clientName}</p>
+                      <p className="text-sm text-slate-500">{checkInPanel.clientEmail}</p>
+                    </div>
+                  </div>
+                  {checkInPanel.clientPhone && (
+                    <p className="text-sm text-slate-600 flex items-center gap-2 ml-15">
+                      <Phone className="w-4 h-4 text-slate-400" />
+                      {checkInPanel.clientPhone}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Appointment Details */}
+              <div className="bg-blue-50 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Appointment Details
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Service</span>
+                    <span className="font-medium text-slate-900">{checkInPanel.serviceName || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Date & Time</span>
+                    <span className="font-medium text-slate-900">
+                      {formatDateTime(checkInPanel.date, checkInPanel.time)}
+                    </span>
+                  </div>
+                  {checkInPanel.servicePrice != null && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Price</span>
+                      <span className="font-semibold text-blue-600">${Number(checkInPanel.servicePrice).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {checkInPanel.staffName && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Staff</span>
+                      <span className="font-medium text-slate-900">{checkInPanel.staffName}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Client Notes */}
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Client Notes
+                </h3>
+                {clientNotes.length > 0 ? (
+                  <div className="space-y-2">
+                    {clientNotes.map((note) => (
+                      <div key={note.id} className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <p className="text-sm text-amber-900">{note.note}</p>
+                        {note.createdAt && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            {new Date(note.createdAt.toDate?.() || note.createdAt).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400 italic">No notes for this client</p>
+                )}
+              </div>
+
+              {/* Visit History */}
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Visit History
+                </h3>
+                {clientHistory.length > 0 ? (
+                  <div className="space-y-2">
+                    {clientHistory.map((visit) => (
+                      <div key={visit.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{visit.serviceName || 'Appointment'}</p>
+                          <p className="text-xs text-slate-500">{formatDateTime(visit.date, visit.time)}</p>
+                        </div>
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                          visit.status === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {visit.status === 'completed' ? 'Completed' : 'Confirmed'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400 italic">First visit!</p>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="sticky bottom-0 bg-white border-t border-slate-200 p-4 space-y-2">
+              {checkInPanel.status === 'confirmed' || !checkInPanel.status ? (
+                <button
+                  onClick={() => startAppointment(checkInPanel.id)}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-semibold transition-all shadow-md shadow-orange-500/20"
+                >
+                  <Play className="w-5 h-5" />
+                  Start Appointment
+                </button>
+              ) : checkInPanel.status === 'in_progress' ? (
+                <button
+                  onClick={() => completeBooking(checkInPanel.id)}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold transition-all shadow-md shadow-emerald-500/20"
+                >
+                  <Check className="w-5 h-5" />
+                  Complete Appointment
+                </button>
+              ) : null}
+              <button
+                onClick={closeCheckInPanel}
+                className="w-full px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-all"
+              >
+                Close
               </button>
             </div>
           </div>
@@ -2118,6 +2348,7 @@ function Dashboard({ user }) {
                     { key: 'all', label: 'All' },
                     { key: 'pending', label: 'Pending' },
                     { key: 'confirmed', label: 'Confirmed' },
+                    { key: 'in_progress', label: 'In Progress' },
                     { key: 'completed', label: 'Completed' },
                     { key: 'cancelled', label: 'Cancelled' },
                   ].map((tab) => (
@@ -2164,6 +2395,7 @@ function Dashboard({ user }) {
                         const statusStyles = {
                           pending: 'bg-amber-50 text-amber-700 border-amber-200',
                           confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                          in_progress: 'bg-orange-50 text-orange-700 border-orange-200',
                           completed: 'bg-blue-50 text-blue-700 border-blue-200',
                           rejected: 'bg-red-50 text-red-700 border-red-200',
                           cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
@@ -2171,6 +2403,7 @@ function Dashboard({ user }) {
                         const statusLabels = {
                           pending: 'Pending',
                           confirmed: 'Confirmed',
+                          in_progress: 'In Progress',
                           completed: 'Completed',
                           rejected: 'Rejected',
                           cancelled: 'Cancelled',
@@ -2221,11 +2454,12 @@ function Dashboard({ user }) {
                                 {status === 'confirmed' && (
                                   <>
                                     <button
-                                      onClick={() => completeBooking(booking.id)}
-                                      className="opacity-0 group-hover:opacity-100 p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
-                                      title="Mark as completed"
+                                      onClick={() => openCheckInPanel(booking)}
+                                      className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-lg transition-all text-xs font-medium"
+                                      title="Start appointment"
                                     >
-                                      <Check className="w-4 h-4" />
+                                      <Play className="w-3 h-3" />
+                                      Start
                                     </button>
                                     <button
                                       onClick={() => cancelBooking(booking.id)}
@@ -2233,6 +2467,25 @@ function Dashboard({ user }) {
                                       title="Cancel booking"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                                {status === 'in_progress' && (
+                                  <>
+                                    <button
+                                      onClick={() => completeBooking(booking.id)}
+                                      className="flex items-center gap-1 px-2 py-1 text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-all text-xs font-medium"
+                                      title="Complete appointment"
+                                    >
+                                      <Check className="w-3 h-3" />
+                                      Complete
+                                    </button>
+                                    <button
+                                      onClick={() => openCheckInPanel(booking)}
+                                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                                      title="View client info"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
                                     </button>
                                   </>
                                 )}
