@@ -1541,18 +1541,33 @@ function Dashboard({ user }) {
                     <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                       Slot Duration
                     </label>
-                    <select
-                      value={newSlots.slotDuration}
-                      onChange={(e) => setNewSlots({...newSlots, slotDuration: e.target.value})}
-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
-                    >
-                      <option value="15">15 minutes</option>
-                      <option value="30">30 minutes</option>
-                      <option value="45">45 minutes</option>
-                      <option value="60">1 hour</option>
-                      <option value="90">1.5 hours</option>
-                      <option value="120">2 hours</option>
-                    </select>
+                    {(() => {
+                      // Calculate max duration based on time range
+                      const [startH, startM] = newSlots.startTime.split(':').map(Number)
+                      const [endH, endM] = newSlots.endTime.split(':').map(Number)
+                      const maxMinutes = (endH * 60 + endM) - (startH * 60 + startM)
+                      const durations = [
+                        { value: '15', label: '15 minutes' },
+                        { value: '30', label: '30 minutes' },
+                        { value: '45', label: '45 minutes' },
+                        { value: '60', label: '1 hour' },
+                        { value: '90', label: '1.5 hours' },
+                        { value: '120', label: '2 hours' },
+                      ].filter(d => parseInt(d.value) <= maxMinutes)
+                      return (
+                        <select
+                          value={newSlots.slotDuration}
+                          onChange={(e) => setNewSlots({...newSlots, slotDuration: e.target.value})}
+                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                        >
+                          {durations.length > 0 ? durations.map(d => (
+                            <option key={d.value} value={d.value}>{d.label}</option>
+                          )) : (
+                            <option value="15">15 minutes</option>
+                          )}
+                        </select>
+                      )
+                    })()}
                   </div>
 
                   <button
