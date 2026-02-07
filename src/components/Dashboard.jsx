@@ -1804,7 +1804,7 @@ function Dashboard({ user }) {
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
                         {slotsByDate[date].sort((a, b) => a.time.localeCompare(b.time)).map(slot => (
                           <div key={slot.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-center group hover:border-slate-300 transition-all">
-                            <div className="text-sm font-bold text-slate-900 mb-0.5">{slot.time}</div>
+                            <div className="text-sm font-bold text-slate-900 mb-0.5">{formatTimeShort(slot.time)}</div>
                             <div className="text-xs text-slate-500 mb-1">{slot.duration} min</div>
                             {slot.staffName && (
                               <div className="text-xs text-violet-600 mb-1.5 flex items-center justify-center gap-1">
