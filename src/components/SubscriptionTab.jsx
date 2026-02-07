@@ -292,7 +292,7 @@ function SubscriptionTab({ shopId, shop: initialShop, slug }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {tiers.map((tier) => {
           const isCurrentTier = tier.key === currentTier
-          const isLowerTier = ['free', 'pro'].indexOf(tier.key) < ['free', 'pro', 'unlimited'].indexOf(currentTier)
+          const isLowerTier = ['free', 'pro', 'unlimited'].indexOf(tier.key) < ['free', 'pro', 'unlimited'].indexOf(currentTier)
           const canUpgrade = !isCurrentTier && !isLowerTier
 
           return (
