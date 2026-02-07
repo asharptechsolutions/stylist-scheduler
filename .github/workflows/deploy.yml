@@ -32,6 +32,11 @@ jobs:
         run: firebase deploy --only firestore:rules --force
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      
+      - name: Deploy Storage Rules
+        run: firebase deploy --only storage --force
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
   deploy-frontend:
     runs-on: ubuntu-latest
