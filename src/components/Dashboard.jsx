@@ -407,6 +407,38 @@ function Dashboard({ user }) {
     return flags
   }, [staff, staffFilter])
 
+  // Compute breaks by date for the current month (for calendar display)
+  const breaksByDate = useMemo(() => {
+    const breaks = {}
+    const relevantStaff = staffFilter === 'all' ? staff : staff.filter((s) => s.id === staffFilter)
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
+    // Generate for 60 days ahead
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    for (let i = 0; i < 60; i++) {
+      const date = new Date(today)
+      date.setDate(date.getDate() + i)
+      const dayOfWeek = date.getDay()
+      const dayName = dayNames[dayOfWeek]
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+      for (const member of relevantStaff) {
+        if (!member.weeklyHours || !member.weeklyHours[dayName]?.enabled) continue
+        const dayConfig = member.weeklyHours[dayName]
+        // Support both new breaks array and legacy single break
+        const dayBreaks = dayConfig.breaks || (dayConfig.break ? [dayConfig.break] : [])
+        if (dayBreaks.length > 0) {
+          if (!breaks[dateStr]) breaks[dateStr] = []
+          breaks[dateStr].push(...dayBreaks.map(b => ({ ...b, staffId: member.id, staffName: member.name })))
+        }
+      }
+    }
+
+    return breaks
+  }, [staff, staffFilter])
+
   // Staff with weekly hours (for summary)
   const staffWithHours = useMemo(() => {
     const relevantStaff = staffFilter === 'all' ? staff : staff.filter((s) => s.id === staffFilter)
@@ -1438,6 +1470,7 @@ function Dashboard({ user }) {
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
                 recurringDayFlags={recurringDayFlags}
+                breaksByDate={breaksByDate}
               />
               {selectedDate && (
                 <div className="mt-3 flex items-center gap-3">

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
-function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelectDate, recurringDayFlags = {} }) {
+function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelectDate, recurringDayFlags = {}, breaksByDate = {} }) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
 
   const getDaysInMonth = (date) => {
@@ -33,9 +33,11 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
     const dateStr = getDateString(day)
     const slots = slotsByDate[dateStr] || []
     const bookings = bookingsByDate[dateStr] || []
+    const breaks = breaksByDate[dateStr] || []
     const availableCount = slots.filter(s => s.available).length
     const bookedCount = bookings.length
-    return { availableCount, bookedCount, hasData: slots.length > 0 || bookings.length > 0 }
+    const breakCount = breaks.length
+    return { availableCount, bookedCount, breakCount, hasData: slots.length > 0 || bookings.length > 0 || breakCount > 0 }
   }
 
   const handleDateClick = (day) => {
@@ -94,7 +96,7 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
         {Array.from({ length: daysInMonth }).map((_, i) => {
           const day = i + 1
           const dateStr = getDateString(day)
-          const { availableCount, bookedCount, hasData } = getDayStats(day)
+          const { availableCount, bookedCount, breakCount, hasData } = getDayStats(day)
           const selected = dateStr === selectedDate
           const today = new Date()
           const isToday = today.getDate() === day &&
@@ -137,6 +139,15 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
                       R
                     </span>
                   )}
+                  {breakCount > 0 && (
+                    <span className={`text-[9px] font-bold px-1 rounded ${
+                      selected
+                        ? 'bg-white/20 text-white'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      ☕
+                    </span>
+                  )}
                   {availableCount > 0 && (
                     <span className={`text-[9px] font-bold px-1 rounded ${
                       selected
@@ -169,6 +180,10 @@ function DashboardCalendar({ slotsByDate, bookingsByDate, selectedDate, onSelect
             <span>Recurring</span>
           </div>
         )}
+        <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 bg-amber-100 border border-amber-200 rounded flex items-center justify-center text-[8px]">☕</div>
+          <span>Break</span>
+        </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3.5 h-3.5 bg-emerald-100 border border-emerald-200 rounded" />
           <span>Available</span>

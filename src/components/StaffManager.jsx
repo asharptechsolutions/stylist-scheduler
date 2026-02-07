@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { collection, addDoc, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { db, storage } from '../firebase'
-import { Plus, Edit3, Trash2, X, Check, Users, Clock, Camera, Image, Loader2, Crown, Zap } from 'lucide-react'
+import { Plus, Edit3, Trash2, X, Check, Users, Clock, Camera, Image, Loader2, Crown, Zap, Calendar, ChevronDown, Coffee } from 'lucide-react'
 import WeeklyHoursEditor from './WeeklyHoursEditor'
+import SchedulePresets from './SchedulePresets'
 import { getStaffLimit, canAddStaff } from '../utils/features'
 import { UpgradeModal, StaffLimitBanner } from './UpgradePrompt'
 
@@ -40,6 +41,10 @@ function StaffManager({ shopId, shop, slug }) {
   })
   const [saving, setSaving] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [activeTab, setActiveTab] = useState('staff') // 'staff' | 'presets'
+  const [presets, setPresets] = useState([])
+  const [applyPresetDropdown, setApplyPresetDropdown] = useState(null) // staffId when open
+  const [presetAppliedTo, setPresetAppliedTo] = useState(null) // { staffId, presetName } for notification
 
   // Staff limits
   const staffLimit = getStaffLimit(shop)
@@ -61,7 +66,7 @@ function StaffManager({ shopId, shop, slug }) {
   useEffect(() => {
     if (!shopId) return
 
-    const unsub = onSnapshot(
+    const unsubStaff = onSnapshot(
       collection(db, 'shops', shopId, 'staff'),
       (snapshot) => {
         const items = snapshot.docs
@@ -72,8 +77,58 @@ function StaffManager({ shopId, shop, slug }) {
       }
     )
 
-    return () => unsub()
+    const unsubPresets = onSnapshot(
+      collection(db, 'shops', shopId, 'schedulePresets'),
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            if (a.isDefault && !b.isDefault) return -1
+            if (!a.isDefault && b.isDefault) return 1
+            return (a.name || '').localeCompare(b.name || '')
+          })
+        setPresets(items)
+      }
+    )
+
+    return () => {
+      unsubStaff()
+      unsubPresets()
+    }
   }, [shopId])
+
+  // Apply preset to staff member
+  const applyPresetToStaff = async (staffId, preset) => {
+    if (!preset.days) return
+    
+    try {
+      const weeklyHours = {}
+      const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+      
+      for (const key of dayKeys) {
+        const presetDay = preset.days[key]
+        if (presetDay) {
+          const breaks = presetDay.breaks || (presetDay.break ? [presetDay.break] : [])
+          weeklyHours[key] = {
+            enabled: !!presetDay.enabled,
+            start: presetDay.start || '09:00',
+            end: presetDay.end || '17:00',
+            breaks,
+            break: breaks.length > 0 ? breaks[0] : null, // backward compat
+          }
+        } else {
+          weeklyHours[key] = { enabled: false, start: '09:00', end: '17:00', breaks: [], break: null }
+        }
+      }
+      
+      await updateDoc(doc(db, 'shops', shopId, 'staff', staffId), { weeklyHours })
+      setApplyPresetDropdown(null)
+      setPresetAppliedTo({ staffId, presetName: preset.name })
+      setTimeout(() => setPresetAppliedTo(null), 2500)
+    } catch (err) {
+      console.error('Error applying preset:', err)
+    }
+  }
 
   const resetForm = () => {
     setFormData({ name: '', role: '' })
@@ -261,7 +316,9 @@ function StaffManager({ shopId, shop, slug }) {
     if (enabledDays.length === 0) return null
     return enabledDays.map((d) => {
       const cfg = weeklyHours[d.key]
-      return `${d.short} ${formatTimeShort(cfg.start)}–${formatTimeShort(cfg.end)}`
+      const breaks = cfg.breaks || (cfg.break ? [cfg.break] : [])
+      const breakIndicator = breaks.length > 0 ? ` ☕${breaks.length > 1 ? breaks.length : ''}` : ''
+      return `${d.short} ${formatTimeShort(cfg.start)}–${formatTimeShort(cfg.end)}${breakIndicator}`
     })
   }
 
@@ -276,36 +333,70 @@ function StaffManager({ shopId, shop, slug }) {
         onChange={handleFileChange}
       />
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Staff</h2>
-          <p className="text-slate-600 text-sm mt-1">
-            Manage your team — assign availability and bookings per staff member
-          </p>
-        </div>
-        {!showForm && (
-          canAdd ? (
-            <button
-              onClick={() => {
-                resetForm()
-                setShowForm(true)
-              }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
-            >
-              <Plus className="w-4 h-4" />
-              Add Staff
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowUpgradeModal(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 transition-all hover:-translate-y-0.5"
-            >
-              <Crown className="w-4 h-4" />
-              Upgrade to Add More
-            </button>
-          )
-        )}
+      {/* Tabs */}
+      <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-6 w-fit">
+        <button
+          onClick={() => setActiveTab('staff')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'staff'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Staff Members
+        </button>
+        <button
+          onClick={() => setActiveTab('presets')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'presets'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          Schedule Presets
+        </button>
       </div>
+
+      {/* Presets Tab */}
+      {activeTab === 'presets' && (
+        <SchedulePresets shopId={shopId} />
+      )}
+
+      {/* Staff Tab */}
+      {activeTab === 'staff' && (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">Staff</h2>
+              <p className="text-slate-600 text-sm mt-1">
+                Manage your team — assign availability and bookings per staff member
+              </p>
+            </div>
+            {!showForm && (
+              canAdd ? (
+                <button
+                  onClick={() => {
+                    resetForm()
+                    setShowForm(true)
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all hover:-translate-y-0.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Staff
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowUpgradeModal(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 transition-all hover:-translate-y-0.5"
+                >
+                  <Crown className="w-4 h-4" />
+                  Upgrade to Add More
+                </button>
+              )
+            )}
+          </div>
 
       {/* Staff Limit Banner */}
       <StaffLimitBanner
@@ -507,6 +598,14 @@ function StaffManager({ shopId, shop, slug }) {
                     </div>
                   )}
 
+                  {/* Preset applied notification */}
+                  {presetAppliedTo?.staffId === member.id && (
+                    <div className="mb-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-xs text-green-700 font-medium animate-fade-in">
+                      <Check className="w-3.5 h-3.5" />
+                      Applied "{presetAppliedTo.presetName}" schedule
+                    </div>
+                  )}
+
                   <div className="flex gap-2 flex-wrap">
                     <button
                       onClick={() =>
@@ -521,20 +620,68 @@ function StaffManager({ shopId, shop, slug }) {
                       <Clock className="w-3.5 h-3.5" />
                       Set Hours
                     </button>
+
+                    {/* Apply Preset Dropdown */}
+                    {presets.length > 0 && (
+                      <div className="relative">
+                        <button
+                          onClick={() => setApplyPresetDropdown(applyPresetDropdown === member.id ? null : member.id)}
+                          className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
+                            applyPresetDropdown === member.id
+                              ? 'bg-violet-100 text-violet-700 border-violet-300'
+                              : 'bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200'
+                          }`}
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          Apply Preset
+                          <ChevronDown className={`w-3 h-3 transition-transform ${applyPresetDropdown === member.id ? 'rotate-180' : ''}`} />
+                        </button>
+                        
+                        {applyPresetDropdown === member.id && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={() => setApplyPresetDropdown(null)}
+                            />
+                            <div className="absolute top-full right-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-20 py-2 max-h-64 overflow-y-auto">
+                              {presets.map((preset) => (
+                                <button
+                                  key={preset.id}
+                                  onClick={() => applyPresetToStaff(member.id, preset)}
+                                  className="w-full px-4 py-2.5 text-left hover:bg-blue-50 transition-colors"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-slate-900 text-sm">{preset.name}</span>
+                                    {preset.isDefault && (
+                                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded">
+                                        DEFAULT
+                                      </span>
+                                    )}
+                                  </div>
+                                  {preset.description && (
+                                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{preset.description}</p>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
                     <button
                       onClick={() =>
                         setEditingPortfolioId(
                           editingPortfolioId === member.id ? null : member.id
                         )
                       }
-                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
+                      className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
                         editingPortfolioId === member.id
                           ? 'bg-violet-100 text-violet-700 border-violet-300'
                           : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
                       }`}
                     >
                       <Camera className="w-3.5 h-3.5" />
-                      Portfolio
                     </button>
                     <button
                       onClick={() => startEdit(member)}
@@ -694,6 +841,8 @@ function StaffManager({ shopId, shop, slug }) {
             )
           })}
         </div>
+      )}
+        </>
       )}
     </div>
   )

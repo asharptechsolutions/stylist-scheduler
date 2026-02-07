@@ -32,6 +32,65 @@ function formatDateStr(date) {
 }
 
 /**
+ * Check if a time slot overlaps with any breaks.
+ * 
+ * @param {number} slotStart - Slot start in minutes since midnight
+ * @param {number} slotEnd - Slot end in minutes since midnight
+ * @param {Array} breaks - Array of break objects with start/end times
+ * @returns {boolean} True if slot overlaps with any break
+ */
+function overlapsWithBreaks(slotStart, slotEnd, breaks) {
+  if (!breaks || breaks.length === 0) return false
+  
+  for (const brk of breaks) {
+    if (!brk || !brk.start || !brk.end) continue
+    const breakStart = timeToMinutes(brk.start)
+    const breakEnd = timeToMinutes(brk.end)
+    
+    // Overlap if slot starts before break ends AND slot ends after break starts
+    if (slotStart < breakEnd && slotEnd > breakStart) {
+      return true
+    }
+  }
+  
+  return false
+}
+
+/**
+ * Get the next available start time after all breaks that overlap with current position.
+ * 
+ * @param {number} currentStart - Current position in minutes
+ * @param {Array} breaks - Array of break objects
+ * @returns {number} Next available start time in minutes
+ */
+function getNextAvailableStart(currentStart, breaks) {
+  if (!breaks || breaks.length === 0) return currentStart
+  
+  // Sort breaks by start time
+  const sortedBreaks = [...breaks]
+    .filter(b => b && b.start && b.end)
+    .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start))
+  
+  let next = currentStart
+  
+  // Keep advancing past any breaks we're currently in
+  for (const brk of sortedBreaks) {
+    const breakStart = timeToMinutes(brk.start)
+    const breakEnd = timeToMinutes(brk.end)
+    
+    // If we're before this break, we're done
+    if (next < breakStart) break
+    
+    // If we're in or overlapping this break, advance past it
+    if (next < breakEnd) {
+      next = breakEnd
+    }
+  }
+  
+  return next
+}
+
+/**
  * Generate time slots for a single staff member on a single date.
  *
  * @param {Object} weeklyHours - The staff member's weeklyHours config
@@ -55,8 +114,9 @@ export function generateSlotsForDate(weeklyHours, dateStr, serviceDuration, buff
 
   const startMin = timeToMinutes(dayConfig.start)
   const endMin = timeToMinutes(dayConfig.end)
-  const breakStart = dayConfig.break ? timeToMinutes(dayConfig.break.start) : null
-  const breakEnd = dayConfig.break ? timeToMinutes(dayConfig.break.end) : null
+  
+  // Support both new breaks array and legacy single break field
+  const breaks = dayConfig.breaks || (dayConfig.break ? [dayConfig.break] : [])
 
   const step = serviceDuration + bufferMinutes
   const slots = []
@@ -65,12 +125,11 @@ export function generateSlotsForDate(weeklyHours, dateStr, serviceDuration, buff
   while (current + serviceDuration <= endMin) {
     const slotEnd = current + serviceDuration
 
-    // Skip if slot overlaps with break
-    if (breakStart !== null && breakEnd !== null) {
-      if (current < breakEnd && slotEnd > breakStart) {
-        current = breakEnd
-        continue
-      }
+    // Skip if slot overlaps with any break
+    if (overlapsWithBreaks(current, slotEnd, breaks)) {
+      // Jump to end of the earliest overlapping break
+      current = getNextAvailableStart(current, breaks)
+      continue
     }
 
     slots.push({
@@ -186,4 +245,26 @@ export function mergeSlots(generatedSlots, manualSlots) {
   })
 
   return [...manualSlots, ...uniqueGenerated]
+}
+
+/**
+ * Get breaks for a staff member on a specific date.
+ * Useful for displaying breaks in the calendar/schedule view.
+ *
+ * @param {Object} weeklyHours - The staff member's weeklyHours config
+ * @param {string} dateStr - "YYYY-MM-DD"
+ * @returns {Array} Array of break objects with start/end times, or empty array
+ */
+export function getBreaksForDate(weeklyHours, dateStr) {
+  if (!weeklyHours) return []
+
+  const date = new Date(dateStr + 'T12:00:00')
+  const dayOfWeek = date.getDay()
+  const dayName = DAY_NAMES[dayOfWeek]
+  const dayConfig = weeklyHours[dayName]
+
+  if (!dayConfig || !dayConfig.enabled) return []
+
+  // Support both new breaks array and legacy single break field
+  return dayConfig.breaks || (dayConfig.break ? [dayConfig.break] : [])
 }
