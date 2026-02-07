@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
-import { auth, db } from '../firebase'
-import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu, Archive, AlertTriangle } from 'lucide-react'
+import { auth, db, storage } from '../firebase'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { Calendar, Clock, Mail, Phone, User, Trash2, LogOut, Eye, Plus, Tag, DollarSign, Users, RefreshCw, Scissors, BarChart3, CalendarDays, TrendingUp, Lock, Check, XCircle, Settings, ListOrdered, Bell, X, Repeat, PieChart, UserPlus, Heart, Crown, Menu, Archive, AlertTriangle, Image, Palette, Upload } from 'lucide-react'
 import DashboardCalendar from './DashboardCalendar'
 import ServiceManager from './ServiceManager'
 import StaffManager from './StaffManager'
@@ -63,6 +64,7 @@ function Dashboard({ user }) {
   const [waitlistAlert, setWaitlistAlert] = useState(null) // { matches, slot }
   const [recurringCancelModal, setRecurringCancelModal] = useState(null) // { bookingId, recurringGroupId }
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
   const [newSlots, setNewSlots] = useState({
     date: '',
     startTime: '09:00',
@@ -385,6 +387,57 @@ function Dashboard({ user }) {
       setShop((prev) => ({ ...prev, bufferMinutes: minutes }))
     } catch (err) {
       console.error('Error updating buffer minutes:', err)
+    }
+  }
+
+  // Branding functions
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file')
+      return
+    }
+    
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image must be smaller than 2MB')
+      return
+    }
+
+    setUploadingLogo(true)
+    try {
+      const logoRef = ref(storage, `shops/${shopId}/logo-${Date.now()}`)
+      await uploadBytes(logoRef, file)
+      const logoUrl = await getDownloadURL(logoRef)
+      
+      await updateDoc(doc(db, 'shops', shopId), { logoUrl })
+      setShop((prev) => ({ ...prev, logoUrl }))
+    } catch (err) {
+      console.error('Error uploading logo:', err)
+      alert('Failed to upload logo. Please try again.')
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  const updateBrandColor = async (color) => {
+    try {
+      await updateDoc(doc(db, 'shops', shopId), { brandColor: color })
+      setShop((prev) => ({ ...prev, brandColor: color }))
+    } catch (err) {
+      console.error('Error updating brand color:', err)
+    }
+  }
+
+  const updateTagline = async (tagline) => {
+    try {
+      await updateDoc(doc(db, 'shops', shopId), { tagline })
+      setShop((prev) => ({ ...prev, tagline }))
+    } catch (err) {
+      console.error('Error updating tagline:', err)
     }
   }
 
@@ -1386,6 +1439,94 @@ function Dashboard({ user }) {
                     </div>
                   </>
                 )}
+              </div>
+            </div>
+
+            {/* Branding Settings */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+                <Palette className="w-5 h-5 text-violet-500" />
+                Branding
+              </h2>
+              <p className="text-sm text-slate-500 mb-6">Customize how your booking page looks to customers</p>
+
+              <div className="space-y-6">
+                {/* Logo Upload */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-slate-900 text-sm">Shop Logo</h3>
+                  <div className="flex items-center gap-4">
+                    {shop?.logoUrl ? (
+                      <img 
+                        src={shop.logoUrl} 
+                        alt="Shop logo" 
+                        className="w-20 h-20 rounded-xl object-cover border-2 border-slate-200"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center">
+                        <Image className="w-8 h-8 text-slate-400" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <label className="relative cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                          className="hidden"
+                          disabled={uploadingLogo}
+                        />
+                        <span className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                          uploadingLogo 
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                        }`}>
+                          <Upload className="w-4 h-4" />
+                          {uploadingLogo ? 'Uploading...' : shop?.logoUrl ? 'Change Logo' : 'Upload Logo'}
+                        </span>
+                      </label>
+                      <p className="text-xs text-slate-500 mt-2">Recommended: Square image, at least 200x200px. Max 2MB.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Brand Color */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-slate-900 text-sm">Brand Color</h3>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="color"
+                      value={shop?.brandColor || '#3B82F6'}
+                      onChange={(e) => updateBrandColor(e.target.value)}
+                      className="w-12 h-12 rounded-xl cursor-pointer border-2 border-slate-200"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm text-slate-600">Used for buttons and accents on your booking page</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-slate-500">Preview:</span>
+                        <button 
+                          className="px-4 py-1.5 rounded-lg text-white text-sm font-medium"
+                          style={{ backgroundColor: shop?.brandColor || '#3B82F6' }}
+                        >
+                          Book Now
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tagline */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-slate-900 text-sm">Tagline</h3>
+                  <input
+                    type="text"
+                    value={shop?.tagline || ''}
+                    onChange={(e) => updateTagline(e.target.value)}
+                    placeholder="e.g., Your neighborhood barbershop since 2010"
+                    maxLength={100}
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                  <p className="text-xs text-slate-500">Appears below your shop name on the booking page (max 100 chars)</p>
+                </div>
               </div>
             </div>
 

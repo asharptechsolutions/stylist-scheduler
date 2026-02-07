@@ -783,12 +783,23 @@ function BookingPage() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-violet-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-600/20">
-              {(shop.name || '')[0]?.toUpperCase() || 'S'}
-            </div>
+            {shop.logoUrl ? (
+              <img 
+                src={shop.logoUrl} 
+                alt={`${shop.name} logo`}
+                className="w-10 h-10 rounded-xl object-cover shadow-md"
+              />
+            ) : (
+              <div 
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md"
+                style={{ backgroundColor: shop.brandColor || '#3B82F6' }}
+              >
+                {(shop.name || '')[0]?.toUpperCase() || 'S'}
+              </div>
+            )}
             <div>
               <h1 className="text-lg font-bold text-slate-900 leading-tight">{shop.name}</h1>
-              <p className="text-xs text-slate-500">Book your appointment</p>
+              <p className="text-xs text-slate-500">{shop.tagline || 'Book your appointment'}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -1458,8 +1469,9 @@ function BookingPage() {
                   className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 ${
                     requiresDeposit 
                       ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 hover:shadow-emerald-600/25' 
-                      : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 hover:shadow-blue-600/25'
+                      : ''
                   } text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0`}
+                  style={!requiresDeposit ? { backgroundColor: shop.brandColor || '#3B82F6' } : {}}
                 >
                   {submitting ? (
                     <>
