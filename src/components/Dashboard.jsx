@@ -30,7 +30,7 @@ function formatTimeShort(time) {
   const [h, m] = time.split(':').map(Number)
   const ampm = h >= 12 ? 'PM' : 'AM'
   const hour = h % 12 || 12
-  return m === 0 ? `${hour}${ampm}` : `${hour}:${m.toString().padStart(2, '0')}${ampm}`
+  return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`
 }
 
 function Dashboard({ user }) {
