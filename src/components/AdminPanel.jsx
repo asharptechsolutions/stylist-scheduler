@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, serverTimestamp } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { signOut, signInWithEmailAndPassword } from 'firebase/auth'
@@ -31,10 +31,19 @@ const TIER_LABELS = {
 
 function AdminPanel({ user }) {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [shops, setShops] = useState([])
   const [users, setUsers] = useState([])
-  const [activeTab, setActiveTab] = useState('overview')
+  
+  // Get active tab from URL, default to 'overview'
+  const validTabs = ['overview', 'shops', 'users', 'revenue', 'support']
+  const tabFromUrl = searchParams.get('tab')
+  const activeTab = validTabs.includes(tabFromUrl) ? tabFromUrl : 'overview'
+  
+  const setActiveTab = (tab) => {
+    setSearchParams({ tab })
+  }
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedShop, setSelectedShop] = useState(null)
   const [actionLoading, setActionLoading] = useState(null)

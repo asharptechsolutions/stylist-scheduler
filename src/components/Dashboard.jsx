@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { collection, query, where, getDocs, onSnapshot, addDoc, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
@@ -36,6 +36,7 @@ function formatTimeShort(time) {
 function Dashboard({ user }) {
   const { slug } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [shop, setShop] = useState(null)
   const [shopId, setShopId] = useState(null)
@@ -46,7 +47,15 @@ function Dashboard({ user }) {
   const [bookings, setBookings] = useState([])
   const [staff, setStaff] = useState([])
   const [services, setServices] = useState([])
-  const [activeTab, setActiveTab] = useState('schedule')
+  
+  // Get active tab from URL, default to 'schedule'
+  const validTabs = ['schedule', 'clients', 'walkins', 'analytics', 'waitlist', 'staff', 'services', 'subscription', 'settings']
+  const tabFromUrl = searchParams.get('tab')
+  const activeTab = validTabs.includes(tabFromUrl) ? tabFromUrl : 'schedule'
+  
+  const setActiveTab = (tab) => {
+    setSearchParams({ tab })
+  }
   const [selectedDate, setSelectedDate] = useState(null)
   const [staffFilter, setStaffFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
