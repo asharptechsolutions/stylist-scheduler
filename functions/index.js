@@ -1,8 +1,9 @@
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore')
-const { onRequest } = require('firebase-functions/v2/https')
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params')
 const { initializeApp } = require('firebase-admin/app')
 const { getFirestore, FieldValue } = require('firebase-admin/firestore')
+const { getAuth } = require('firebase-admin/auth')
 const { Resend } = require('resend')
 const Stripe = require('stripe')
 
@@ -1143,3 +1144,84 @@ async function handleAccountUpdated(account) {
 
   console.log(`Updated Connect status for shop ${targetShopId}: ${status}, payouts: ${account.payouts_enabled}`)
 }
+
+
+// Admin-only: Delete a user account
+const ADMIN_EMAILS = ["aaron.sharp2011@gmail.com"]
+
+exports.adminDeleteUser = onCall(async (request) => {
+  // Check if caller is authenticated
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in")
+  }
+
+  // Check if caller is admin
+  const callerEmail = request.auth.token.email
+  if (!ADMIN_EMAILS.includes(callerEmail)) {
+    throw new HttpsError("permission-denied", "Admin access required")
+  }
+
+  const { userId, deleteShops } = request.data
+  if (!userId) {
+    throw new HttpsError("invalid-argument", "userId is required")
+  }
+
+  const auth = getAuth()
+  const results = { userId, shopsDeleted: 0, errors: [] }
+
+  try {
+    // Get user info before deletion
+    let userRecord
+    try {
+      userRecord = await auth.getUser(userId)
+    } catch (e) {
+      throw new HttpsError("not-found", "User not found in Firebase Auth")
+    }
+
+    // Delete shops owned by this user if requested
+    if (deleteShops) {
+      const shopsSnapshot = await db.collection("shops")
+        .where("ownerId", "==", userId)
+        .get()
+
+      for (const shopDoc of shopsSnapshot.docs) {
+        try {
+          // Delete subcollections
+          const subcollections = ["staff", "bookings", "availability", "waitlist", "schedulePresets", "services", "walkins", "clientNotes"]
+          for (const subcol of subcollections) {
+            const subcolSnapshot = await shopDoc.ref.collection(subcol).get()
+            const batch = db.batch()
+            subcolSnapshot.docs.forEach(doc => batch.delete(doc.ref))
+            if (subcolSnapshot.docs.length > 0) {
+              await batch.commit()
+            }
+          }
+          // Delete shop document
+          await shopDoc.ref.delete()
+          results.shopsDeleted++
+        } catch (e) {
+          results.errors.push(`Failed to delete shop ${shopDoc.id}: ${e.message}`)
+        }
+      }
+    }
+
+    // Delete user document from Firestore
+    try {
+      await db.collection("users").doc(userId).delete()
+    } catch (e) {
+      results.errors.push(`Failed to delete user document: ${e.message}`)
+    }
+
+    // Delete user from Firebase Auth
+    await auth.deleteUser(userId)
+
+    return {
+      success: true,
+      message: `User ${userRecord.email || userId} deleted`,
+      ...results
+    }
+  } catch (error) {
+    console.error("Error deleting user:", error)
+    throw new HttpsError("internal", error.message)
+  }
+})

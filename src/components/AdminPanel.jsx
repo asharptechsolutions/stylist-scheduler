@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, serverTimestamp } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../firebase'
+
+const functions = getFunctions()
 import {
   Shield, Store, CreditCard, DollarSign, Users, Search, ExternalLink,
   LogOut, Crown, Zap, Gift, TrendingUp, Calendar, Mail, Eye,
@@ -39,6 +42,10 @@ function AdminPanel({ user }) {
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [shopBookingCounts, setShopBookingCounts] = useState({})
   const [forceDelete, setForceDelete] = useState(false)
+  const [deleteUserModal, setDeleteUserModal] = useState(null)
+  const [deleteUserShops, setDeleteUserShops] = useState(true)
+  const [deletingUser, setDeletingUser] = useState(false)
+  const [userSearchQuery, setUserSearchQuery] = useState('')
 
   // Check if user is admin
   const isAdmin = user && ADMIN_EMAILS.includes(user.email?.toLowerCase())
@@ -248,6 +255,51 @@ function AdminPanel({ user }) {
     }
   }
 
+  const handleDeleteUser = async (userId) => {
+    setDeletingUser(true)
+    try {
+      const adminDeleteUser = httpsCallable(functions, 'adminDeleteUser')
+      const result = await adminDeleteUser({
+        userId,
+        deleteShops: deleteUserShops
+      })
+      
+      if (result.data.success) {
+        // Update local state
+        setUsers(prev => prev.filter(u => u.id !== userId))
+        if (deleteUserShops && result.data.shopsDeleted > 0) {
+          // Refresh shops list
+          const shopsSnapshot = await getDocs(collection(db, 'shops'))
+          setShops(shopsSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
+        }
+        setDeleteUserModal(null)
+        setDeleteUserShops(true)
+        alert(`User deleted successfully. ${result.data.shopsDeleted} shop(s) deleted.`)
+      }
+    } catch (err) {
+      console.error('Error deleting user:', err)
+      alert(err.message || 'Failed to delete user')
+    } finally {
+      setDeletingUser(false)
+    }
+  }
+
+  // Get shops owned by a user
+  const getUserShops = (userId) => {
+    return shops.filter(s => s.ownerId === userId)
+  }
+
+  // Filter users
+  const filteredUsers = useMemo(() => {
+    if (!userSearchQuery) return users
+    const q = userSearchQuery.toLowerCase()
+    return users.filter(u => 
+      u.email?.toLowerCase().includes(q) ||
+      u.displayName?.toLowerCase().includes(q) ||
+      u.id.toLowerCase().includes(q)
+    )
+  }, [users, userSearchQuery])
+
   const formatDate = (timestamp) => {
     if (!timestamp) return '—'
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
@@ -286,6 +338,7 @@ function AdminPanel({ user }) {
   const tabs = [
     { key: 'overview', label: 'Overview', icon: PieChart },
     { key: 'shops', label: 'Shops', icon: Store },
+    { key: 'users', label: 'Users', icon: Users },
     { key: 'revenue', label: 'Revenue', icon: DollarSign },
     { key: 'support', label: 'Support', icon: Settings },
   ]
@@ -757,6 +810,71 @@ function AdminPanel({ user }) {
           </div>
         )}
 
+        {/* Users Tab */}
+        {activeTab === 'users' && (
+          <div className="animate-fade-in">
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-violet-500" />
+                  All Users ({users.length})
+                </h2>
+              </div>
+
+              {/* Search */}
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by email, name, or ID..."
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all text-sm"
+                />
+              </div>
+
+              {/* Users List */}
+              <div className="space-y-3">
+                {filteredUsers.length === 0 ? (
+                  <p className="text-center text-slate-500 py-8">No users found</p>
+                ) : (
+                  filteredUsers.map(u => {
+                    const userShops = getUserShops(u.id)
+                    return (
+                      <div key={u.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-all">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-violet-500 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                              {(u.email?.[0] || '?').toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-900 truncate">{u.email || 'No email'}</div>
+                              <div className="text-xs text-slate-500 font-mono truncate">{u.id}</div>
+                              {userShops.length > 0 && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <Store className="w-3 h-3 text-blue-500" />
+                                  <span className="text-xs text-blue-600">{userShops.length} shop{userShops.length > 1 ? 's' : ''}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setDeleteUserModal(u)}
+                            className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Support Tab */}
         {activeTab === 'support' && (
           <div className="animate-fade-in">
@@ -1089,6 +1207,89 @@ function AdminPanel({ user }) {
                   <>
                     <Trash2 className="w-4 h-4" />
                     Delete Forever
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {deleteUserModal && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-scale-in">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Delete User Account</h3>
+                <p className="text-sm text-slate-500">{deleteUserModal.email}</p>
+              </div>
+            </div>
+
+            {/* User's shops */}
+            {getUserShops(deleteUserModal.id).length > 0 && (
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <Store className="w-5 h-5 text-amber-600" />
+                  <span className="font-semibold text-amber-800">
+                    {getUserShops(deleteUserModal.id).length} Shop{getUserShops(deleteUserModal.id).length !== 1 ? 's' : ''} Owned
+                  </span>
+                </div>
+                <ul className="text-sm text-amber-700 mb-3 space-y-1">
+                  {getUserShops(deleteUserModal.id).map(s => (
+                    <li key={s.id}>• {s.name} (/{s.slug})</li>
+                  ))}
+                </ul>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteUserShops}
+                    onChange={(e) => setDeleteUserShops(e.target.checked)}
+                    className="w-4 h-4 rounded border-amber-400 text-red-600 focus:ring-red-500"
+                  />
+                  <span className="text-sm font-medium text-amber-800">
+                    Also delete all shops owned by this user
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-sm text-red-700 mb-2">
+                <strong>This will permanently delete:</strong>
+              </p>
+              <ul className="text-sm text-red-600 space-y-1 ml-4 list-disc">
+                <li>User's Firebase Auth account</li>
+                <li>User document in database</li>
+                {deleteUserShops && <li>All shops and their data (bookings, staff, etc.)</li>}
+              </ul>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setDeleteUserModal(null)
+                  setDeleteUserShops(true)
+                }}
+                disabled={deletingUser}
+                className="flex-1 px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteUser(deleteUserModal.id)}
+                disabled={deletingUser}
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-xl font-semibold text-sm transition-all shadow-md shadow-red-600/20"
+              >
+                {deletingUser ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete User
                   </>
                 )}
               </button>
