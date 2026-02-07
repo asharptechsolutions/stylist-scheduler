@@ -319,8 +319,8 @@ export default function AnalyticsTab({ bookings }) {
 
       {/* ── Revenue Chart (14 days) ── */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-lg font-bold text-slate-900 mb-1">Revenue — Last 14 Days</h3>
-        <p className="text-xs text-slate-500 mb-5">Daily revenue from confirmed & pending bookings</p>
+        <h3 className="text-lg font-bold text-slate-900 mb-1">Revenue</h3>
+        <p className="text-xs text-slate-500 mb-5">Last 14 days • confirmed & pending bookings</p>
 
         <div className="overflow-x-auto">
           <div className="min-w-[600px]">
@@ -384,12 +384,12 @@ export default function AnalyticsTab({ bookings }) {
 
       {/* ── Booking Trends (14 days) ── */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">Booking Trends — Last 14 Days</h3>
-            <p className="text-xs text-slate-500 mb-5">Daily bookings breakdown</p>
+            <h3 className="text-lg font-bold text-slate-900">Booking Trends</h3>
+            <p className="text-xs text-slate-500">Last 14 days breakdown</p>
           </div>
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" /> Confirmed
             </span>
