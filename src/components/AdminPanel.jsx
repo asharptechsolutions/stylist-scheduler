@@ -10,7 +10,7 @@ import {
   Shield, Store, CreditCard, DollarSign, Users, Search, ExternalLink,
   LogOut, Crown, Zap, Gift, TrendingUp, Calendar, Mail, Eye,
   ToggleLeft, ToggleRight, AlertTriangle, CheckCircle, Clock,
-  BarChart3, PieChart, ArrowUpRight, Settings, Trash2, Ban, RefreshCw, X, Archive
+  BarChart3, PieChart, ArrowUpRight, Settings, Trash2, Ban, RefreshCw, X, Archive, Menu
 } from 'lucide-react'
 
 // Admin emails that can access this panel
@@ -50,6 +50,7 @@ function AdminPanel({ user }) {
   const [loginPassword, setLoginPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loggingIn, setLoggingIn] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // Check if user is admin
   const isAdmin = user && ADMIN_EMAILS.includes(user.email?.toLowerCase())
@@ -457,8 +458,15 @@ function AdminPanel({ user }) {
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="h-14 sm:h-16 flex items-center justify-between gap-2">
-            {/* Left: Logo */}
+            {/* Left: Logo + Mobile menu button */}
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              {/* Mobile menu button */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-violet-600 to-purple-600 rounded-lg sm:rounded-xl flex items-center justify-center text-white shadow-md shadow-violet-600/20 flex-shrink-0">
                 <Shield className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
@@ -512,28 +520,86 @@ function AdminPanel({ user }) {
         </div>
       </nav>
 
-      {/* Mobile Tab Navigation */}
-      <div className="lg:hidden bg-white border-b border-slate-200 px-4 py-2">
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {tabs.map((tab) => {
-            const Icon = tab.icon
-            return (
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          
+          {/* Slide-out panel */}
+          <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-2xl animate-slide-in-left">
+            {/* Header */}
+            <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-gradient-to-br from-violet-600 to-purple-600 rounded-xl flex items-center justify-center text-white shadow-md">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900">Admin Panel</h2>
+                  <p className="text-xs text-slate-500">Platform Management</p>
+                </div>
+              </div>
               <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
-                  activeTab === tab.key
-                    ? 'bg-violet-100 text-violet-700'
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                }`}
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
               >
-                <Icon className="w-4 h-4" />
-                <span>{tab.label}</span>
+                <X className="w-5 h-5" />
               </button>
-            )
-          })}
+            </div>
+
+            {/* Menu items */}
+            <div className="p-3 space-y-1">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => {
+                      setActiveTab(tab.key)
+                      setMobileMenuOpen(false)
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all ${
+                      activeTab === tab.key
+                        ? 'bg-violet-50 text-violet-700'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 ${activeTab === tab.key ? 'text-violet-600' : 'text-slate-400'}`} />
+                    <span>{tab.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Bottom actions */}
+            <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-slate-200 bg-slate-50">
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false)
+                  fetchData()
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-white rounded-xl font-medium transition-all"
+              >
+                <RefreshCw className="w-5 h-5 text-slate-400" />
+                Refresh Data
+              </button>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false)
+                  handleLogout()
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl font-medium transition-all"
+              >
+                <LogOut className="w-5 h-5" />
+                Logout
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Overview Tab */}
