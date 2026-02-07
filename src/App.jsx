@@ -13,6 +13,9 @@ import CheckWaitlist from './components/CheckWaitlist'
 import QueueStatus from './components/QueueStatus'
 import AdminPanel from './components/AdminPanel'
 
+// Admin emails that can access the admin panel
+const ADMIN_EMAILS = ['aaron.sharp2011@gmail.com']
+
 function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
@@ -53,7 +56,11 @@ function App() {
         />
         <Route
           path="/admin"
-          element={<AdminPanel user={user} />}
+          element={
+            user && ADMIN_EMAILS.includes(user.email?.toLowerCase())
+              ? <AdminPanel user={user} />
+              : <Navigate to="/" replace />
+          }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
