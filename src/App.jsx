@@ -11,6 +11,7 @@ import Login from './components/Login'
 import ManageBooking from './components/ManageBooking'
 import CheckWaitlist from './components/CheckWaitlist'
 import QueueStatus from './components/QueueStatus'
+import AdminPanel from './components/AdminPanel'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -49,6 +50,10 @@ function App() {
         <Route
           path="/shop/:slug/dashboard"
           element={<Dashboard user={user} />}
+        />
+        <Route
+          path="/admin"
+          element={<AdminPanel user={user} />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
