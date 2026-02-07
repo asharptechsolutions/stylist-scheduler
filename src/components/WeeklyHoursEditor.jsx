@@ -279,51 +279,55 @@ function WeeklyHoursEditor({ shopId, staffId, staffName, weeklyHours, onClose })
                   : 'bg-slate-50 border border-slate-200'
               }`}
             >
-              <div className="flex items-center gap-4 flex-wrap">
-                {/* Toggle */}
-                <div className="flex items-center gap-3 min-w-[140px]">
-                  <button
-                    type="button"
-                    onClick={() => updateDay(key, 'enabled', !day.enabled)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      day.enabled ? 'bg-blue-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                        day.enabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+              {/* Day header with toggle */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => updateDay(key, 'enabled', !day.enabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                    day.enabled ? 'bg-blue-500' : 'bg-slate-300'
+                  }`}
+                >
                   <span
-                    className={`font-semibold text-sm ${
-                      day.enabled ? 'text-slate-900' : 'text-slate-400'
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                      day.enabled ? 'translate-x-6' : 'translate-x-1'
                     }`}
-                  >
-                    {label}
-                  </span>
-                </div>
+                  />
+                </button>
+                <span
+                  className={`font-semibold text-sm ${
+                    day.enabled ? 'text-slate-900' : 'text-slate-400'
+                  }`}
+                >
+                  {label}
+                </span>
+                {!day.enabled && (
+                  <span className="text-sm text-slate-400 italic ml-2">Day off</span>
+                )}
+              </div>
 
-                {day.enabled ? (
-                  <>
-                    {/* Time inputs */}
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-blue-500" />
-                      <input
-                        type="time"
-                        value={day.start}
-                        onChange={(e) => updateDay(key, 'start', e.target.value)}
-                        className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <span className="text-slate-400 text-sm">to</span>
-                      <input
-                        type="time"
-                        value={day.end}
-                        onChange={(e) => updateDay(key, 'end', e.target.value)}
-                        className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
+              {day.enabled && (
+                <div className="mt-3 ml-14 space-y-3">
+                  {/* Time inputs */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Clock className="w-4 h-4 text-blue-500" />
+                    <input
+                      type="time"
+                      value={day.start}
+                      onChange={(e) => updateDay(key, 'start', e.target.value)}
+                      className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-slate-400 text-sm">to</span>
+                    <input
+                      type="time"
+                      value={day.end}
+                      onChange={(e) => updateDay(key, 'end', e.target.value)}
+                      className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
 
+                  {/* Actions row */}
+                  <div className="flex items-center gap-3">
                     {/* Add break button */}
                     <button
                       type="button"
@@ -346,15 +350,13 @@ function WeeklyHoursEditor({ shopId, staffId, staffName, weeklyHours, onClose })
                     >
                       {copySource === key ? '✓ Copied!' : 'Copy to all'}
                     </button>
-                  </>
-                ) : (
-                  <span className="text-sm text-slate-400 italic">Day off</span>
-                )}
-              </div>
+                  </div>
+                </div>
+              )}
 
               {/* Breaks list */}
               {day.enabled && breaks.length > 0 && (
-                <div className="mt-3 ml-[140px] space-y-2">
+                <div className="mt-2 ml-14 space-y-2">
                   {breaks.map((brk, idx) => (
                     <div key={idx} className="flex items-center gap-2 animate-fade-in">
                       <Coffee className="w-3.5 h-3.5 text-amber-500" />
