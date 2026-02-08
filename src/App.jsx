@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from './firebase'
+import { doc, getDoc } from 'firebase/firestore'
+import { auth, db } from './firebase'
 import LandingPage from './components/LandingPage'
 import Register from './components/Register'
 import SignIn from './components/SignIn'
@@ -12,18 +13,41 @@ import ManageBooking from './components/ManageBooking'
 import CheckWaitlist from './components/CheckWaitlist'
 import QueueStatus from './components/QueueStatus'
 import AdminPanel from './components/AdminPanel'
+import ClientLogin from './components/ClientLogin'
+import ClientDashboard from './components/ClientDashboard'
 
 function App() {
   const [user, setUser] = useState(null)
+  const [client, setClient] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser)
+      
+      // Check if this is a client (phone auth user)
+      if (firebaseUser && firebaseUser.phoneNumber) {
+        try {
+          const clientDoc = await getDoc(doc(db, 'clients', firebaseUser.uid))
+          if (clientDoc.exists()) {
+            setClient({ id: firebaseUser.uid, ...clientDoc.data() })
+          }
+        } catch (err) {
+          console.error('Error fetching client:', err)
+        }
+      } else {
+        setClient(null)
+      }
+      
       setAuthLoading(false)
     })
     return () => unsubscribe()
   }, [])
+
+  const handleClientLogin = ({ user: u, client: c }) => {
+    setUser(u)
+    setClient(c)
+  }
 
   if (authLoading) {
     return (
@@ -54,6 +78,14 @@ function App() {
         <Route
           path="/admin"
           element={<AdminPanel user={user} />}
+        />
+        <Route
+          path="/client/login"
+          element={<ClientLogin onLogin={handleClientLogin} />}
+        />
+        <Route
+          path="/client/dashboard"
+          element={<ClientDashboard user={user} client={client} />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

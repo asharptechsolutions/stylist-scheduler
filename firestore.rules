@@ -9,7 +9,7 @@ service cloud.firestore {
     }
     
     // ========================================
-    // USERS (for admin panel)
+    // USERS (for admin panel - shop owners)
     // ========================================
     match /users/{userId} {
       // Users can read their own data
@@ -19,6 +19,20 @@ service cloud.firestore {
       allow create, update: if request.auth != null && request.auth.uid == userId;
       
       // Only admins can delete users (handled via Cloud Functions)
+      allow delete: if false;
+    }
+    
+    // ========================================
+    // CLIENTS (phone-verified customers)
+    // ========================================
+    match /clients/{clientId} {
+      // Clients can read their own data
+      allow read: if request.auth != null && request.auth.uid == clientId;
+      
+      // Clients can create/update their own profile
+      allow create, update: if request.auth != null && request.auth.uid == clientId;
+      
+      // Prevent deletion (data retention)
       allow delete: if false;
     }
     
@@ -72,10 +86,11 @@ service cloud.firestore {
       // BOOKINGS (restricted - contains PII)
       // ========================================
       match /bookings/{bookingId} {
-        // Only shop owner can read all bookings
-        // Clients can read their own booking by refCode (handled via query)
+        // Shop owner can read all bookings
+        // Clients can read by email, phone, or refCode
         allow read: if isShopOwner(shopId)
-          || (resource.data.clientEmail == request.auth.token.email)
+          || (request.auth != null && resource.data.clientEmail == request.auth.token.email)
+          || (request.auth != null && resource.data.clientPhone == request.auth.token.phone_number)
           || (resource.data.refCode != null);
         
         // Anyone can create a booking (clients booking appointments)
