@@ -386,6 +386,10 @@ function Dashboard({ user }) {
       status: 'in_progress',
       startedAt: serverTimestamp()
     })
+    // Update the panel state to reflect new status
+    if (checkInPanel && checkInPanel.id === bookingId) {
+      setCheckInPanel(prev => ({ ...prev, status: 'in_progress' }))
+    }
   }
 
   const openCheckInPanel = async (booking) => {
@@ -1210,7 +1214,10 @@ function Dashboard({ user }) {
                         </div>
                         {idx === 0 && (
                           <button
-                            onClick={() => openCheckInPanel(booking)}
+                            onClick={async () => {
+                              await startAppointment(booking.id)
+                              openCheckInPanel({ ...booking, status: 'in_progress' })
+                            }}
                             className="px-3 py-1.5 bg-white text-blue-600 rounded-lg text-sm font-semibold hover:bg-blue-50 transition-all"
                           >
                             Start
@@ -2544,7 +2551,10 @@ function Dashboard({ user }) {
                                 {status === 'confirmed' && (
                                   <>
                                     <button
-                                      onClick={() => openCheckInPanel(booking)}
+                                      onClick={async () => {
+                                        await startAppointment(booking.id)
+                                        openCheckInPanel({ ...booking, status: 'in_progress' })
+                                      }}
                                       className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-lg transition-all text-xs font-medium"
                                       title="Start appointment"
                                     >
