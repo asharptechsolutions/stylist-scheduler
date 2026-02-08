@@ -2,127 +2,18 @@ const { onRequest } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params')
 const { getFirestore, FieldValue } = require('firebase-admin/firestore')
 const twilio = require('twilio')
+const Anthropic = require('@anthropic-ai/sdk')
 
 const twilioAccountSid = defineSecret('TWILIO_ACCOUNT_SID')
 const twilioAuthToken = defineSecret('TWILIO_AUTH_TOKEN')
 const twilioPhoneNumber = defineSecret('TWILIO_PHONE_NUMBER')
+const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY')
 
 const db = getFirestore()
 
 // ============================================================
-// CONVERSATION STATE MACHINE
+// FORMATTING HELPERS
 // ============================================================
-// States: idle, awaiting_service, awaiting_date, awaiting_time,
-//         awaiting_staff, confirming, awaiting_payment, complete
-
-// ============================================================
-// SIMPLE INTENT / ENTITY EXTRACTION (keyword-based)
-// TODO: Replace with Anthropic Claude API for natural language understanding
-// ============================================================
-
-function detectIntent(text) {
-  const lower = text.toLowerCase().trim()
-
-  if (/^(cancel|stop|nevermind|never mind)$/i.test(lower)) return 'cancel'
-  if (/^(help|info|commands|\?)$/i.test(lower)) return 'help'
-  if (/^(hours|open|close)$/i.test(lower)) return 'hours'
-  if (/^(hi|hello|hey|yo|sup)$/i.test(lower)) return 'greeting'
-  if (/(book|appointment|schedule|reserve)/i.test(lower)) return 'book'
-  if (/^(yes|yeah|yep|y|confirm|ok|sure|correct)$/i.test(lower)) return 'confirm'
-  if (/^(no|nah|nope|n|wrong)$/i.test(lower)) return 'deny'
-  if (/^any$/i.test(lower)) return 'any'
-
-  return 'unknown'
-}
-
-function extractDate(text) {
-  const lower = text.toLowerCase().trim()
-  const now = new Date()
-
-  if (/today/i.test(lower)) {
-    return formatDateISO(now)
-  }
-  if (/tomorrow/i.test(lower)) {
-    const d = new Date(now)
-    d.setDate(d.getDate() + 1)
-    return formatDateISO(d)
-  }
-
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  for (let i = 0; i < days.length; i++) {
-    if (lower.includes(days[i])) {
-      const d = new Date(now)
-      const diff = (i - d.getDay() + 7) % 7 || 7
-      d.setDate(d.getDate() + diff)
-      return formatDateISO(d)
-    }
-  }
-
-  // MM/DD or MM-DD
-  const mdMatch = lower.match(/(\d{1,2})[\/\-](\d{1,2})/)
-  if (mdMatch) {
-    const month = parseInt(mdMatch[1]) - 1
-    const day = parseInt(mdMatch[2])
-    const d = new Date(now.getFullYear(), month, day)
-    if (d < now) d.setFullYear(d.getFullYear() + 1)
-    return formatDateISO(d)
-  }
-
-  return null
-}
-
-function extractTime(text) {
-  const lower = text.toLowerCase().trim()
-
-  // "3pm", "3:00pm", "3:00 pm", "15:00"
-  const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
-  if (timeMatch) {
-    let hour = parseInt(timeMatch[1])
-    const min = timeMatch[2] ? parseInt(timeMatch[2]) : 0
-    const ampm = timeMatch[3]?.toLowerCase()
-
-    if (ampm === 'pm' && hour < 12) hour += 12
-    if (ampm === 'am' && hour === 12) hour = 0
-    // If no am/pm and hour <= 7, assume PM (business hours heuristic)
-    if (!ampm && hour >= 1 && hour <= 7) hour += 12
-
-    return `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`
-  }
-
-  if (/morning/i.test(lower)) return '10:00'
-  if (/afternoon/i.test(lower)) return '14:00'
-  if (/evening/i.test(lower)) return '17:00'
-
-  return null
-}
-
-function matchService(text, services) {
-  const lower = text.toLowerCase().trim()
-  // Try exact-ish match first
-  for (const svc of services) {
-    if (lower.includes(svc.name.toLowerCase())) return svc
-  }
-  // Try partial match
-  for (const svc of services) {
-    const words = svc.name.toLowerCase().split(/\s+/)
-    if (words.some(w => w.length > 3 && lower.includes(w))) return svc
-  }
-  return null
-}
-
-function matchStaff(text, staffList) {
-  const lower = text.toLowerCase().trim()
-  for (const s of staffList) {
-    if (lower.includes(s.name.toLowerCase())) return s
-  }
-  return null
-}
-
-// Number selection helper (user replies "1", "2", etc.)
-function extractNumber(text) {
-  const m = text.trim().match(/^(\d+)$/)
-  return m ? parseInt(m[1]) : null
-}
 
 function formatDateISO(d) {
   return d.toISOString().split('T')[0]
@@ -141,11 +32,10 @@ function formatTimeHuman(time24) {
 }
 
 // ============================================================
-// SHOP ROUTING
+// SHOP DATA HELPERS
 // ============================================================
 
 async function findShopForPhone(phoneNumber) {
-  // Search across all shops' bookings for this phone number
   const shopsSnap = await db.collection('shops').get()
   const matchedShops = []
 
@@ -172,6 +62,11 @@ async function getShopStaff(shopId) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
+async function getShopData(shopId) {
+  const doc = await db.collection('shops').doc(shopId).get()
+  return doc.exists ? { id: doc.id, ...doc.data() } : null
+}
+
 // ============================================================
 // SEND SMS
 // ============================================================
@@ -186,19 +81,169 @@ async function sendSMS(to, body) {
 }
 
 // ============================================================
-// CONVERSATION PROCESSOR
+// CLAUDE AI CONVERSATION ENGINE
+// ============================================================
+
+/**
+ * Build the system prompt for Claude with all shop context.
+ */
+function buildSystemPrompt(shop, services, staff, conversation) {
+  const now = new Date()
+  const todayStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+
+  const serviceList = services.map(s => {
+    let line = `- ${s.name}`
+    if (s.price) line += ` ($${s.price})`
+    if (s.duration) line += ` [${s.duration} min]`
+    return line
+  }).join('\n')
+
+  const staffList = staff.length > 0
+    ? staff.map(s => `- ${s.name}${s.role ? ' (' + s.role + ')' : ''}`).join('\n')
+    : '- (No specific staff listed — bookings are with the shop)'
+
+  const state = conversation?.state || 'idle'
+  const ctx = conversation?.context || {}
+
+  let collectedInfo = 'None yet'
+  const parts = []
+  if (ctx.selectedService) parts.push(`Service: ${ctx.selectedService.name} ($${ctx.selectedService.price || 0}, ${ctx.selectedService.duration || 30}min)`)
+  if (ctx.selectedDate) parts.push(`Date: ${ctx.selectedDate} (${formatDateHuman(ctx.selectedDate)})`)
+  if (ctx.selectedTime) parts.push(`Time: ${ctx.selectedTime} (${formatTimeHuman(ctx.selectedTime)})`)
+  if (ctx.selectedStaff) parts.push(`Staff: ${ctx.selectedStaff.name}`)
+  if (ctx.clientName && ctx.clientName !== 'SMS Customer') parts.push(`Customer name: ${ctx.clientName}`)
+  if (parts.length > 0) collectedInfo = parts.join('\n')
+
+  return `You are a friendly, concise SMS booking assistant for "${shop.name || 'the shop'}".
+
+CURRENT DATE/TIME: ${todayStr} at ${timeStr}
+SHOP: ${shop.name || 'Unknown'}
+
+SERVICES OFFERED:
+${serviceList || '(none configured)'}
+
+STAFF:
+${staffList}
+
+CONVERSATION STATE: ${state}
+COLLECTED INFO:
+${collectedInfo}
+
+YOUR JOB:
+Help the customer book an appointment via text message. Guide them through selecting a service, date, time, and optionally a stylist. Be warm but brief — this is SMS.
+
+RULES:
+1. Keep responses SHORT. Max 3-4 lines unless listing options.
+2. Use emojis sparingly for warmth (1-2 per message).
+3. When listing options, number them so customers can reply with a number.
+4. Always confirm the full booking details before finalizing.
+5. If the customer mentions multiple things at once (e.g. "haircut tomorrow at 3pm"), extract ALL of them.
+6. Handle "cancel", "stop" → cancel current flow.
+7. Handle "help" → brief help message.
+8. If a customer's message is unclear, ask ONE clarifying question.
+9. Never invent services or staff that aren't in the lists above.
+10. For dates, interpret relative to the current date shown above.
+
+RESPOND WITH VALID JSON ONLY — no markdown, no code fences, just the raw JSON object:
+{
+  "reply": "Your SMS message to the customer",
+  "action": "none|select_shop|select_service|select_date|select_time|select_staff|confirm_booking|cancel|help",
+  "extracted": {
+    "shopIndex": null,
+    "serviceIndex": null,
+    "serviceName": null,
+    "date": null,
+    "time": null,
+    "staffIndex": null,
+    "staffName": null,
+    "clientName": null,
+    "confirmed": null
+  },
+  "newState": "idle|awaiting_shop_selection|awaiting_service|awaiting_date|awaiting_time|awaiting_staff|confirming"
+}
+
+FIELD NOTES:
+- "serviceIndex" is 0-based index into the services list. "serviceName" is fallback for fuzzy match.
+- "date" should be YYYY-MM-DD format.
+- "time" should be HH:MM in 24-hour format.
+- "staffIndex" is 0-based index into the staff list.
+- "confirmed" is true/false when customer confirms or denies the booking.
+- "newState" tells us what to ask next. If you extracted everything needed, go to "confirming".
+- If the customer provides service+date+time in one message, set them all and skip to "confirming" (or "awaiting_staff" if multiple staff exist).
+- For "cancel" action, set newState to "idle".`
+}
+
+/**
+ * Call Claude to process a customer message and return structured response.
+ */
+async function callClaude(systemPrompt, messageHistory, customerMessage) {
+  const client = new Anthropic({ apiKey: anthropicApiKey.value() })
+
+  // Build messages array from history + new message
+  const messages = []
+
+  // Include last 10 messages of history for context
+  const recentHistory = (messageHistory || []).slice(-10)
+  for (const msg of recentHistory) {
+    messages.push({
+      role: msg.role === 'customer' ? 'user' : 'assistant',
+      content: msg.text,
+    })
+  }
+
+  // Add the new customer message
+  messages.push({ role: 'user', content: customerMessage })
+
+  // If the last two messages are both "user", merge or fix
+  // (Claude requires alternating roles)
+  const cleaned = []
+  for (const msg of messages) {
+    if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === msg.role) {
+      cleaned[cleaned.length - 1].content += '\n' + msg.content
+    } else {
+      cleaned.push({ ...msg })
+    }
+  }
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 400,
+    system: systemPrompt,
+    messages: cleaned,
+  })
+
+  const text = response.content[0]?.text || ''
+
+  // Parse JSON response from Claude
+  try {
+    // Strip any markdown fencing Claude might add despite instructions
+    const jsonStr = text.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
+    return JSON.parse(jsonStr)
+  } catch (err) {
+    console.error('Failed to parse Claude response as JSON:', text)
+    // Fallback: return the raw text as reply with no actions
+    return {
+      reply: text.substring(0, 320), // SMS-safe length
+      action: 'none',
+      extracted: {},
+      newState: null,
+    }
+  }
+}
+
+// ============================================================
+// MAIN CONVERSATION PROCESSOR
 // ============================================================
 
 async function processMessage(phoneNumber, messageText) {
-  // Get or create conversation
   const convRef = db.collection('smsConversations').doc(phoneNumber)
   const convDoc = await convRef.get()
   let conv = convDoc.exists ? convDoc.data() : null
 
-  const intent = detectIntent(messageText)
-
-  // Global commands
-  if (intent === 'cancel') {
+  // Quick check for global cancel/help (bypass AI for speed)
+  const lower = messageText.toLowerCase().trim()
+  if (/^(cancel|stop|quit)$/i.test(lower)) {
     await convRef.set({
       phoneNumber,
       state: 'idle',
@@ -208,110 +253,200 @@ async function processMessage(phoneNumber, messageText) {
     return "✅ Cancelled. Text anytime to book a new appointment!"
   }
 
-  if (intent === 'help') {
-    return "📱 SMS Booking Help:\n• Text \"book\" to start booking\n• Text \"cancel\" to cancel\n• Text \"hours\" for business hours\n\nJust describe what you need and we'll help!"
+  // If waiting for payment, don't burn AI tokens
+  if (conv?.state === 'awaiting_payment') {
+    if (/^(cancel|stop)$/i.test(lower)) {
+      await convRef.update({ state: 'idle', context: {}, updatedAt: FieldValue.serverTimestamp() })
+      return "✅ Cancelled. Text anytime to book again!"
+    }
+    return "⏳ We're waiting for your deposit payment. Check the link we sent!\n\nReply CANCEL to cancel."
   }
 
-  // No conversation yet or idle
-  if (!conv || conv.state === 'idle') {
-    return await handleIdle(convRef, phoneNumber, messageText, intent)
+  // ── SHOP ROUTING (before AI, since we need shop context for the prompt) ──
+
+  // If no conversation or idle, resolve which shop first
+  if (!conv || conv.state === 'idle' || !conv.shopId) {
+    const result = await resolveShop(convRef, phoneNumber, conv, messageText)
+    if (result.needsInput) {
+      return result.reply // Asked customer to pick a shop
+    }
+    // Shop resolved — reload conv
+    conv = (await convRef.get()).data()
   }
 
-  // Route based on state
-  switch (conv.state) {
-    case 'awaiting_shop_selection':
-      return await handleShopSelection(convRef, conv, messageText)
-    case 'awaiting_service':
-      return await handleServiceSelection(convRef, conv, messageText)
-    case 'awaiting_date':
-      return await handleDateSelection(convRef, conv, messageText)
-    case 'awaiting_time':
-      return await handleTimeSelection(convRef, conv, messageText)
-    case 'awaiting_staff':
-      return await handleStaffSelection(convRef, conv, messageText)
-    case 'confirming':
-      return await handleConfirmation(convRef, conv, messageText, intent)
-    case 'awaiting_payment':
-      return "⏳ We're waiting for your deposit payment. Check the link we sent!\n\nReply CANCEL to cancel."
-    default:
-      // Reset
-      await convRef.update({ state: 'idle', context: {} })
-      return "Something went wrong. Text \"book\" to start over!"
+  // ── SHOP SELECTION STATE (keyword fallback — cheap, no AI needed) ──
+  if (conv.state === 'awaiting_shop_selection') {
+    const result = await handleShopSelection(convRef, conv, messageText)
+    if (result.needsInput) return result.reply
+    // Shop resolved — reload conv
+    conv = (await convRef.get()).data()
   }
+
+  // ── LOAD SHOP CONTEXT ──
+  const shop = await getShopData(conv.shopId)
+  if (!shop) {
+    await convRef.update({ state: 'idle', context: {}, shopId: FieldValue.delete() })
+    return "Sorry, we couldn't find that shop. Please try again."
+  }
+
+  const services = await getShopServices(conv.shopId)
+  const staff = await getShopStaff(conv.shopId)
+
+  // ── CALL CLAUDE ──
+  const systemPrompt = buildSystemPrompt(shop, services, staff, conv)
+  const aiResponse = await callClaude(systemPrompt, conv.messageHistory, messageText)
+
+  // ── PROCESS AI RESPONSE ──
+  const extracted = aiResponse.extracted || {}
+  const newState = aiResponse.newState || conv.state
+  const action = aiResponse.action || 'none'
+  const ctx = { ...(conv.context || {}) }
+
+  // Apply extracted entities to context
+  if (extracted.serviceIndex != null && services[extracted.serviceIndex]) {
+    const s = services[extracted.serviceIndex]
+    ctx.selectedService = { id: s.id, name: s.name, price: s.price, duration: s.duration }
+  } else if (extracted.serviceName) {
+    const match = services.find(s => s.name.toLowerCase().includes(extracted.serviceName.toLowerCase()))
+    if (match) ctx.selectedService = { id: match.id, name: match.name, price: match.price, duration: match.duration }
+  }
+
+  if (extracted.date) ctx.selectedDate = extracted.date
+  if (extracted.time) ctx.selectedTime = extracted.time
+
+  if (extracted.staffIndex != null && staff[extracted.staffIndex]) {
+    const s = staff[extracted.staffIndex]
+    ctx.selectedStaff = { id: s.id, name: s.name }
+  } else if (extracted.staffName) {
+    const match = staff.find(s => s.name.toLowerCase().includes(extracted.staffName.toLowerCase()))
+    if (match) ctx.selectedStaff = { id: match.id, name: match.name }
+  }
+
+  if (extracted.clientName) ctx.clientName = extracted.clientName
+
+  // Store services/staff refs in context for subsequent turns
+  ctx.shopName = shop.name
+  ctx.services = services.map(s => ({ id: s.id, name: s.name, price: s.price, duration: s.duration }))
+  ctx.staff = staff.map(s => ({ id: s.id, name: s.name }))
+
+  // ── HANDLE BOOKING CONFIRMATION ──
+  if (action === 'confirm_booking' && extracted.confirmed === true) {
+    return await createBooking(convRef, conv, ctx)
+  }
+
+  // ── HANDLE CANCEL ──
+  if (action === 'cancel') {
+    await convRef.update({
+      state: 'idle',
+      context: {},
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+    return aiResponse.reply || "✅ Cancelled. Text anytime to book again!"
+  }
+
+  // ── UPDATE CONVERSATION STATE ──
+  await convRef.update({
+    state: newState,
+    context: ctx,
+    updatedAt: FieldValue.serverTimestamp(),
+  })
+
+  return aiResponse.reply
 }
 
-async function handleIdle(convRef, phoneNumber, messageText, intent) {
-  // Try to find which shop(s) this customer has visited
+// ============================================================
+// SHOP RESOLUTION (pre-AI, no tokens burned)
+// ============================================================
+
+async function resolveShop(convRef, phoneNumber, conv, messageText) {
   const shops = await findShopForPhone(phoneNumber)
 
-  if (intent === 'greeting' || intent === 'book' || intent === 'unknown') {
-    if (shops.length === 1) {
-      // Auto-route to their shop
-      const shop = shops[0]
-      const services = await getShopServices(shop.id)
+  if (shops.length === 1) {
+    const shop = shops[0]
+    const services = await getShopServices(shop.id)
+    await convRef.set({
+      phoneNumber,
+      shopId: shop.id,
+      state: 'awaiting_service',
+      context: {
+        shopName: shop.name,
+        services: services.map(s => ({ id: s.id, name: s.name, price: s.price, duration: s.duration })),
+      },
+      messageHistory: [],
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return { needsInput: false }
 
+  } else if (shops.length > 1) {
+    const shopList = shops.map((s, i) => `${i + 1}. ${s.name}`).join('\n')
+    await convRef.set({
+      phoneNumber,
+      state: 'awaiting_shop_selection',
+      context: { shops: shops.map(s => ({ id: s.id, name: s.name })) },
+      messageHistory: [],
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return {
+      needsInput: true,
+      reply: `👋 Hi! Which shop are you booking with?\n${shopList}\n\nReply with a number.`
+    }
+
+  } else {
+    // New customer — list shops
+    const allShops = await db.collection('shops').get()
+    if (allShops.size === 0) {
+      return { needsInput: true, reply: "Sorry, no shops are available for SMS booking right now." }
+    }
+    if (allShops.size === 1) {
+      const shopDoc = allShops.docs[0]
+      const services = await getShopServices(shopDoc.id)
       await convRef.set({
         phoneNumber,
-        shopId: shop.id,
+        shopId: shopDoc.id,
         state: 'awaiting_service',
-        context: { shopName: shop.name, services: services.map(s => ({ id: s.id, name: s.name, price: s.price, duration: s.duration })) },
+        context: {
+          shopName: shopDoc.data().name,
+          services: services.map(s => ({ id: s.id, name: s.name, price: s.price, duration: s.duration })),
+        },
         messageHistory: [],
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true })
+      return { needsInput: false }
+    }
 
-      const serviceList = services.map((s, i) => `${i + 1}. ${s.name} ($${s.price || 0})`).join('\n')
-      return `👋 Hi! Let's book at ${shop.name}.\n\nWhat service would you like?\n${serviceList}\n\nReply with a number or service name.`
-
-    } else if (shops.length > 1) {
-      const shopList = shops.map((s, i) => `${i + 1}. ${s.name}`).join('\n')
-      await convRef.set({
-        phoneNumber,
-        state: 'awaiting_shop_selection',
-        context: { shops: shops.map(s => ({ id: s.id, name: s.name })) },
-        messageHistory: [],
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true })
-      return `👋 Hi! Which shop are you booking with?\n${shopList}\n\nReply with a number.`
-
-    } else {
-      // No history - for now, try to find shop by name in message
-      // TODO: Implement shop search or provide web link
-      const allShops = await db.collection('shops').get()
-      if (allShops.size <= 5) {
-        const shopList = allShops.docs.map((d, i) => `${i + 1}. ${d.data().name}`).join('\n')
-        await convRef.set({
-          phoneNumber,
-          state: 'awaiting_shop_selection',
-          context: { shops: allShops.docs.map(d => ({ id: d.id, name: d.data().name })) },
-          messageHistory: [],
-          updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true })
-        return `👋 Welcome! Which shop would you like to book with?\n${shopList}\n\nReply with a number.`
-      } else {
-        return "👋 Welcome! Please tell us the name of the shop you'd like to book with."
-      }
+    const shopList = allShops.docs.map((d, i) => `${i + 1}. ${d.data().name}`).join('\n')
+    await convRef.set({
+      phoneNumber,
+      state: 'awaiting_shop_selection',
+      context: { shops: allShops.docs.map(d => ({ id: d.id, name: d.data().name })) },
+      messageHistory: [],
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return {
+      needsInput: true,
+      reply: `👋 Welcome! Which shop would you like to book with?\n${shopList}\n\nReply with a number.`
     }
   }
-
-  return "👋 Hi! Text \"book\" to schedule an appointment, or \"help\" for more options."
 }
 
 async function handleShopSelection(convRef, conv, messageText) {
-  const shops = conv.context.shops || []
-  const num = extractNumber(messageText)
+  const shops = conv.context?.shops || []
+  const num = messageText.trim().match(/^(\d+)$/)
   let selectedShop = null
 
-  if (num && num >= 1 && num <= shops.length) {
-    selectedShop = shops[num - 1]
+  if (num && parseInt(num[1]) >= 1 && parseInt(num[1]) <= shops.length) {
+    selectedShop = shops[parseInt(num[1]) - 1]
   } else {
-    // Try name match
     const lower = messageText.toLowerCase()
     selectedShop = shops.find(s => s.name.toLowerCase().includes(lower))
   }
 
   if (!selectedShop) {
     const shopList = shops.map((s, i) => `${i + 1}. ${s.name}`).join('\n')
-    return `Sorry, I didn't get that. Please reply with a number:\n${shopList}`
+    return {
+      needsInput: true,
+      reply: `Sorry, I didn't catch that. Please reply with a number:\n${shopList}`
+    }
   }
 
   const services = await getShopServices(selectedShop.id)
@@ -325,190 +460,63 @@ async function handleShopSelection(convRef, conv, messageText) {
     updatedAt: FieldValue.serverTimestamp(),
   })
 
-  const serviceList = services.map((s, i) => `${i + 1}. ${s.name} ($${s.price || 0})`).join('\n')
-  return `Great! Booking at ${selectedShop.name}.\n\nWhat service would you like?\n${serviceList}\n\nReply with a number or service name.`
+  return { needsInput: false }
 }
 
-async function handleServiceSelection(convRef, conv, messageText) {
-  const services = conv.context.services || []
-  const num = extractNumber(messageText)
-  let selected = null
+// ============================================================
+// BOOKING CREATION
+// ============================================================
 
-  if (num && num >= 1 && num <= services.length) {
-    selected = services[num - 1]
-  } else {
-    selected = matchService(messageText, services)
-  }
-
-  if (!selected) {
-    const serviceList = services.map((s, i) => `${i + 1}. ${s.name}`).join('\n')
-    return `I didn't find that service. Please pick from:\n${serviceList}\n\nReply with a number.`
-  }
-
-  await convRef.update({
-    state: 'awaiting_date',
-    'context.selectedService': selected,
-    updatedAt: FieldValue.serverTimestamp(),
-  })
-
-  return `✂️ ${selected.name} — got it!\n\nWhat date works for you?\n(e.g., "tomorrow", "Wednesday", "2/15")`
-}
-
-async function handleDateSelection(convRef, conv, messageText) {
-  const date = extractDate(messageText)
-  if (!date) {
-    return "I didn't catch the date. Try:\n• \"tomorrow\"\n• A day name like \"Wednesday\"\n• A date like \"2/15\""
-  }
-
-  await convRef.update({
-    state: 'awaiting_time',
-    'context.selectedDate': date,
-    updatedAt: FieldValue.serverTimestamp(),
-  })
-
-  // TODO: Check actual availability and show real open slots
-  return `📅 ${formatDateHuman(date)} — great!\n\nWhat time would you prefer?\n(e.g., "3pm", "10:30am", "afternoon")`
-}
-
-async function handleTimeSelection(convRef, conv, messageText) {
-  const time = extractTime(messageText)
-  if (!time) {
-    return "I didn't catch the time. Try:\n• \"3pm\" or \"3:30pm\"\n• \"morning\" / \"afternoon\" / \"evening\""
-  }
-
-  // Get staff for this shop
-  const staff = await getShopStaff(conv.shopId)
-
-  if (staff.length > 1) {
-    const staffList = staff.map((s, i) => `${i + 1}. ${s.name}`).join('\n')
-    await convRef.update({
-      state: 'awaiting_staff',
-      'context.selectedTime': time,
-      'context.staff': staff.map(s => ({ id: s.id, name: s.name })),
-      updatedAt: FieldValue.serverTimestamp(),
-    })
-    return `🕐 ${formatTimeHuman(time)} — perfect!\n\nDo you have a preferred stylist?\n${staffList}\n\nReply with a number, name, or \"any\".`
-  }
-
-  // Single or no staff — skip staff selection
-  const selectedStaff = staff.length === 1 ? { id: staff[0].id, name: staff[0].name } : null
-
-  await convRef.update({
-    state: 'confirming',
-    'context.selectedTime': time,
-    'context.selectedStaff': selectedStaff,
-    updatedAt: FieldValue.serverTimestamp(),
-  })
-
-  return buildConfirmationMessage(conv.context, time, selectedStaff)
-}
-
-async function handleStaffSelection(convRef, conv, messageText) {
-  const staffList = conv.context.staff || []
-  const intent = detectIntent(messageText)
-  let selected = null
-
-  if (intent === 'any') {
-    selected = staffList[0] // first available
-  } else {
-    const num = extractNumber(messageText)
-    if (num && num >= 1 && num <= staffList.length) {
-      selected = staffList[num - 1]
-    } else {
-      selected = matchStaff(messageText, staffList)
-    }
-  }
-
-  if (!selected) {
-    const list = staffList.map((s, i) => `${i + 1}. ${s.name}`).join('\n')
-    return `I didn't catch that. Pick a stylist:\n${list}\n\nOr reply \"any\".`
-  }
-
-  await convRef.update({
-    state: 'confirming',
-    'context.selectedStaff': selected,
-    updatedAt: FieldValue.serverTimestamp(),
-  })
-
-  return buildConfirmationMessage(conv.context, conv.context.selectedTime, selected)
-}
-
-function buildConfirmationMessage(ctx, time, staff) {
+async function createBooking(convRef, conv, ctx) {
   const svc = ctx.selectedService
-  let msg = `Here's your booking:\n─────────────────\n`
-  msg += `📅 ${formatDateHuman(ctx.selectedDate)}\n`
-  msg += `🕐 ${formatTimeHuman(time)}\n`
-  msg += `✂️  ${svc.name} ($${svc.price || 0})\n`
-  if (staff) msg += `👤 with ${staff.name}\n`
-  msg += `─────────────────\n\n`
-  msg += `Reply YES to confirm or NO to start over.`
-  return msg
-}
+  const staff = ctx.selectedStaff
 
-async function handleConfirmation(convRef, conv, messageText, intent) {
-  if (intent === 'confirm' || intent === 'unknown' && /yes/i.test(messageText)) {
-    // TODO: Check if deposit is required and send Stripe payment link
-    // TODO: Actually create the booking in the shop's bookings collection
-    // For now, create the booking directly
+  if (!svc || !ctx.selectedDate || !ctx.selectedTime) {
+    // AI jumped the gun — shouldn't happen but guard against it
+    return "Hmm, I'm missing some details. What service, date, and time would you like?"
+  }
 
-    const ctx = conv.context
-    const svc = ctx.selectedService
-    const staff = ctx.selectedStaff
+  try {
+    const refCode = Math.random().toString(36).substring(2, 8).toUpperCase()
 
-    try {
-      // Generate ref code
-      const refCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+    await db.collection('shops').doc(conv.shopId).collection('bookings').add({
+      clientName: ctx.clientName || 'SMS Customer',
+      clientPhone: conv.phoneNumber,
+      clientEmail: '',
+      serviceName: svc.name,
+      serviceId: svc.id,
+      servicePrice: svc.price || 0,
+      serviceDuration: svc.duration || 30,
+      staffId: staff?.id || null,
+      staffName: staff?.name || null,
+      date: ctx.selectedDate,
+      time: ctx.selectedTime,
+      status: 'confirmed',
+      source: 'sms',
+      refCode,
+      depositPaid: false,
+      depositAmount: 0,
+      createdAt: FieldValue.serverTimestamp(),
+    })
 
-      // Create booking
-      await db.collection('shops').doc(conv.shopId).collection('bookings').add({
-        clientName: 'SMS Customer', // TODO: Ask for name or look up
-        clientPhone: conv.phoneNumber,
-        clientEmail: '',
-        serviceName: svc.name,
-        serviceId: svc.id,
-        servicePrice: svc.price || 0,
-        serviceDuration: svc.duration || 30,
-        staffId: staff?.id || null,
-        staffName: staff?.name || null,
-        date: ctx.selectedDate,
-        time: ctx.selectedTime,
-        status: 'confirmed',
-        source: 'sms',
-        refCode,
-        depositPaid: false,
-        depositAmount: 0,
-        createdAt: FieldValue.serverTimestamp(),
-      })
-
-      // Reset conversation
-      await convRef.update({
-        state: 'idle',
-        context: {},
-        updatedAt: FieldValue.serverTimestamp(),
-      })
-
-      let msg = `✅ You're all set!\n`
-      msg += `${svc.name}${staff ? ' with ' + staff.name : ''}\n`
-      msg += `${formatDateHuman(ctx.selectedDate)} at ${formatTimeHuman(ctx.selectedTime)}\n`
-      msg += `Ref: ${refCode}\n\n`
-      msg += `Reply CANCEL to cancel or HELP for assistance.`
-      return msg
-
-    } catch (err) {
-      console.error('Error creating booking:', err)
-      return "Sorry, something went wrong creating your booking. Please try again or book online."
-    }
-
-  } else if (intent === 'deny') {
+    // Reset conversation
     await convRef.update({
       state: 'idle',
       context: {},
       updatedAt: FieldValue.serverTimestamp(),
     })
-    return "No problem! Text \"book\" whenever you're ready to try again."
-  }
 
-  return "Reply YES to confirm or NO to cancel."
+    let msg = `✅ You're all set!\n`
+    msg += `${svc.name}${staff ? ' with ' + staff.name : ''}\n`
+    msg += `${formatDateHuman(ctx.selectedDate)} at ${formatTimeHuman(ctx.selectedTime)}\n`
+    msg += `Ref: ${refCode}\n\n`
+    msg += `We'll send a reminder before your appointment.\nReply CANCEL to cancel or HELP for assistance.`
+    return msg
+
+  } catch (err) {
+    console.error('Error creating booking:', err)
+    return "Sorry, something went wrong creating your booking. Please try again or book online."
+  }
 }
 
 // ============================================================
@@ -517,7 +525,7 @@ async function handleConfirmation(convRef, conv, messageText, intent) {
 
 const smsWebhook = onRequest(
   {
-    secrets: [twilioAccountSid, twilioAuthToken, twilioPhoneNumber],
+    secrets: [twilioAccountSid, twilioAuthToken, twilioPhoneNumber, anthropicApiKey],
     cors: false,
   },
   async (req, res) => {
@@ -538,14 +546,13 @@ const smsWebhook = onRequest(
 
     if (!isValid) {
       console.warn('Invalid Twilio signature')
-      // In development, you might want to skip this check
-      // For production, uncomment the next line:
+      // For production, uncomment:
       // res.status(403).send('Forbidden'); return;
     }
 
-    const from = req.body.From  // Customer phone number
-    const body = req.body.Body  // Message text
-    const to = req.body.To      // Our Twilio number
+    const from = req.body.From
+    const body = req.body.Body
+    const to = req.body.To
 
     if (!from || !body) {
       res.status(400).send('Missing From or Body')
@@ -555,7 +562,6 @@ const smsWebhook = onRequest(
     console.log(`SMS from ${from}: ${body.substring(0, 100)}`)
 
     try {
-      // Process the message and get response
       const reply = await processMessage(from, body.trim())
 
       // Log message history
@@ -566,17 +572,15 @@ const smsWebhook = onRequest(
           { role: 'assistant', text: reply, ts: Date.now() }
         ),
         updatedAt: FieldValue.serverTimestamp(),
-      }).catch(() => {}) // Ignore if doc doesn't exist yet
+      }).catch(() => {})
 
       // Send reply via Twilio
       await sendSMS(from, reply)
 
-      // Return empty TwiML (we send reply via API, not TwiML)
       res.type('text/xml').send('<Response></Response>')
 
     } catch (error) {
       console.error('Error processing SMS:', error)
-      // Try to send error message
       try {
         await sendSMS(from, "Sorry, something went wrong. Please try again in a moment.")
       } catch (e) {
@@ -587,4 +591,4 @@ const smsWebhook = onRequest(
   }
 )
 
-module.exports = { smsWebhook, twilioAccountSid, twilioAuthToken, twilioPhoneNumber }
+module.exports = { smsWebhook, twilioAccountSid, twilioAuthToken, twilioPhoneNumber, anthropicApiKey }
