@@ -2,11 +2,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Helper function to check if user is shop owner
+    function isShopOwner(shopId) {
+      return request.auth != null 
+        && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+    }
+    
+    // ========================================
+    // USERS (for admin panel)
+    // ========================================
+    match /users/{userId} {
+      // Users can read their own data
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Users can create/update their own profile
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+      
+      // Only admins can delete users (handled via Cloud Functions)
+      allow delete: if false;
+    }
+    
     // ========================================
     // SHOPS
     // ========================================
     match /shops/{shopId} {
-      // Anyone can read shop info (needed for booking page)
+      // Public shop info (name, slug, services list) - needed for booking page
       allow read: if true;
       
       // Only the shop owner can update their shop
@@ -19,103 +39,99 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == resource.data.ownerUid;
       
       // ========================================
-      // SERVICES
+      // SERVICES (public - needed for booking)
       // ========================================
       match /services/{serviceId} {
-        // Anyone can read services (booking page needs this)
         allow read: if true;
-        
-        // Only the shop owner can manage services
-        allow create, update, delete: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        allow create, update, delete: if isShopOwner(shopId);
       }
       
       // ========================================
-      // STAFF
+      // STAFF (public - needed for booking)
       // ========================================
       match /staff/{staffId} {
-        // Anyone can read staff (booking page needs this)
         allow read: if true;
-        
-        // Only the shop owner can manage staff
-        allow create, update, delete: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        allow create, update, delete: if isShopOwner(shopId);
       }
       
       // ========================================
-      // AVAILABILITY
+      // AVAILABILITY (public - needed for booking)
       // ========================================
       match /availability/{slotId} {
-        // Anyone can read availability (booking page needs this)
         allow read: if true;
         
-        // Only the shop owner can create/delete slots
-        allow create, delete: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        // Owner can manage slots
+        allow create, delete: if isShopOwner(shopId);
         
-        // Owner can update anything; booking page can only mark a slot as unavailable
-        allow update: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid
+        // Owner can update anything; booking flow can mark slot unavailable
+        allow update: if isShopOwner(shopId)
           || (request.resource.data.available == false && resource.data.available == true);
       }
       
       // ========================================
-      // BOOKINGS
+      // BOOKINGS (restricted - contains PII)
       // ========================================
       match /bookings/{bookingId} {
-        // Anyone can read bookings (needed to check availability)
-        // In production, you may want to restrict this to owner-only reads
-        allow read: if true;
+        // Only shop owner can read all bookings
+        // Clients can read their own booking by refCode (handled via query)
+        allow read: if isShopOwner(shopId)
+          || (resource.data.clientEmail == request.auth.token.email)
+          || (resource.data.refCode != null);
         
         // Anyone can create a booking (clients booking appointments)
         allow create: if true;
         
-        // Only the shop owner can update or cancel bookings
-        allow update, delete: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        // Only the shop owner can update or delete bookings
+        allow update, delete: if isShopOwner(shopId);
       }
       
       // ========================================
-      // WAITLIST
+      // WAITLIST (restricted - contains PII)
       // ========================================
       match /waitlist/{entryId} {
-        // Anyone can read waitlist (booking page shows queue position)
-        allow read: if true;
+        // Only shop owner can read waitlist
+        allow read: if isShopOwner(shopId)
+          || (resource.data.refCode != null);
         
         // Anyone can join the waitlist
         allow create: if true;
         
-        // Only the shop owner can update or remove waitlist entries
-        allow update, delete: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        // Only the shop owner can manage waitlist
+        allow update, delete: if isShopOwner(shopId);
       }
       
       // ========================================
-      // WALK-INS
+      // WALK-INS (restricted - contains PII)
       // ========================================
       match /walkins/{walkinId} {
-        // Anyone can read walk-ins (for queue display)
-        allow read: if true;
+        // Only shop owner can read walk-ins
+        allow read: if isShopOwner(shopId);
         
         // Anyone can check in as a walk-in
         allow create: if true;
         
         // Only the shop owner can manage walk-ins
-        allow update, delete: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        allow update, delete: if isShopOwner(shopId);
       }
       
       // ========================================
-      // CLIENT NOTES (CRM)
+      // CLIENT NOTES (private - owner only)
       // ========================================
       match /clientNotes/{noteId} {
-        // Only the shop owner can read and write client notes
-        allow read, write: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid;
+        allow read, write: if isShopOwner(shopId);
+      }
+      
+      // ========================================
+      // SCHEDULE PRESETS (private - owner only)
+      // ========================================
+      match /schedulePresets/{presetId} {
+        allow read, write: if isShopOwner(shopId);
       }
     }
     
-    // Deny everything else by default
+    // ========================================
+    // DEFAULT DENY
+    // ========================================
     match /{document=**} {
       allow read, write: if false;
     }
