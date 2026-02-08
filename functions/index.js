@@ -294,6 +294,18 @@ const emailTemplates = {
 }
 
 // Helper functions
+
+// HTML escape to prevent XSS in email templates
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 function formatDate(dateString) {
   const date = new Date(dateString + 'T12:00:00')
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -305,6 +317,30 @@ function formatTime(timeString) {
   const ampm = hour >= 12 ? 'PM' : 'AM'
   const displayHour = hour % 12 || 12
   return `${displayHour}:${minutes} ${ampm}`
+}
+
+// Sanitize booking object for safe HTML rendering
+function sanitizeBooking(booking) {
+  return {
+    ...booking,
+    clientName: escapeHtml(booking.clientName),
+    clientEmail: escapeHtml(booking.clientEmail),
+    clientPhone: escapeHtml(booking.clientPhone),
+    serviceName: escapeHtml(booking.serviceName),
+    staffName: escapeHtml(booking.staffName),
+    notes: escapeHtml(booking.notes),
+  }
+}
+
+// Sanitize shop object for safe HTML rendering
+function sanitizeShop(shop) {
+  return {
+    ...shop,
+    name: escapeHtml(shop.name),
+    address: escapeHtml(shop.address),
+    phone: escapeHtml(shop.phone),
+    tagline: escapeHtml(shop.tagline),
+  }
 }
 
 // Cloud Function: Send email on new booking
@@ -326,35 +362,39 @@ exports.onBookingCreated = onDocumentCreated(
         console.error('Shop not found:', shopId)
         return
       }
-      const shop = shopDoc.data()
-      shop.bookingUrl = `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}`
+      const shopData = shopDoc.data()
+      shopData.bookingUrl = `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shopData.slug}`
+      
+      // Sanitize user input for HTML email templates (XSS prevention)
+      const safeBooking = sanitizeBooking(booking)
+      const safeShop = sanitizeShop(shopData)
       
       // Initialize Resend
       const resend = new Resend(resendApiKey.value())
       
       // Send confirmation email to client
       const template = booking.status === 'pending' 
-        ? emailTemplates.bookingPending(booking, shop)
-        : emailTemplates.bookingConfirmation(booking, shop)
+        ? emailTemplates.bookingPending(safeBooking, safeShop)
+        : emailTemplates.bookingConfirmation(safeBooking, safeShop)
       
       await resend.emails.send({
         from: 'SpotBookie <onboarding@resend.dev>',
-        to: booking.clientEmail,
+        to: booking.clientEmail,  // Use original email for sending
         subject: template.subject,
         html: template.html
       })
       console.log(`Confirmation email sent to ${booking.clientEmail}`)
       
       // Send notification to shop owner if they have an email
-      if (shop.ownerEmail) {
-        const ownerTemplate = emailTemplates.ownerNotification(booking, shop)
+      if (shopData.ownerEmail) {
+        const ownerTemplate = emailTemplates.ownerNotification(safeBooking, safeShop)
         await resend.emails.send({
           from: 'SpotBookie <onboarding@resend.dev>',
-          to: shop.ownerEmail,
+          to: shopData.ownerEmail,  // Use original email for sending
           subject: ownerTemplate.subject,
           html: ownerTemplate.html
         })
-        console.log(`Owner notification sent to ${shop.ownerEmail}`)
+        console.log(`Owner notification sent to ${shopData.ownerEmail}`)
       }
       
       // Update booking to mark email as sent
@@ -388,11 +428,15 @@ exports.onBookingConfirmed = onDocumentUpdated(
         const shopDoc = await db.collection('shops').doc(shopId).get()
         if (!shopDoc.exists) return
         
-        const shop = shopDoc.data()
-        shop.bookingUrl = `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shop.slug}`
+        const shopData = shopDoc.data()
+        shopData.bookingUrl = `https://asharptechsolutions.github.io/stylist-scheduler/#/shop/${shopData.slug}`
+        
+        // Sanitize for XSS prevention
+        const safeBooking = sanitizeBooking(after)
+        const safeShop = sanitizeShop(shopData)
         
         const resend = new Resend(resendApiKey.value())
-        const template = emailTemplates.bookingConfirmation(after, shop)
+        const template = emailTemplates.bookingConfirmation(safeBooking, safeShop)
         
         await resend.emails.send({
           from: 'SpotBookie <onboarding@resend.dev>',
@@ -459,9 +503,12 @@ exports.onBookingCompleted = onDocumentUpdated(
           reviewLinks.yelp = `https://www.yelp.com/writeareview/biz/${reviewSettings.yelpBusinessId}`
         }
         
-        // Send review request email
+        // Send review request email (sanitize for XSS prevention)
+        const safeBooking = sanitizeBooking(after)
+        const safeShop = sanitizeShop(shop)
+        
         const resend = new Resend(resendApiKey.value())
-        const template = emailTemplates.reviewRequest(after, shop, reviewLinks)
+        const template = emailTemplates.reviewRequest(safeBooking, safeShop, reviewLinks)
         
         await resend.emails.send({
           from: 'SpotBookie <onboarding@resend.dev>',
