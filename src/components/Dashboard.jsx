@@ -504,7 +504,11 @@ function Dashboard({ user }) {
   }
 
   const formatDateTime = (date, time) => {
-    return new Date(`${date}T${time}`).toLocaleString('en-US', {
+    // Parse date parts manually to avoid timezone issues
+    const [year, month, day] = date.split('-').map(Number)
+    const [hours, minutes] = (time || '00:00').split(':').map(Number)
+    const d = new Date(year, month - 1, day, hours, minutes)
+    return d.toLocaleString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
@@ -2665,7 +2669,7 @@ function Dashboard({ user }) {
                   {filteredSlotDates.map(date => (
                     <div key={date}>
                       <h3 className="text-sm font-bold text-slate-700 mb-3 pb-2 border-b border-slate-100">
-                        {new Date(date).toLocaleDateString('en-US', {
+                        {new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
                           weekday: 'long',
                           year: 'numeric',
                           month: 'long',
