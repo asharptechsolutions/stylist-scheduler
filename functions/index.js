@@ -1331,6 +1331,14 @@ async function handleAccountUpdated(account) {
 }
 
 
+// ============================================================
+// SMS BOOKING FUNCTIONS
+// ============================================================
+const { smsWebhook } = require('./smsWebhook')
+const { smsPaymentComplete } = require('./smsPayment')
+exports.smsWebhook = smsWebhook
+exports.smsPaymentComplete = smsPaymentComplete
+
 // Admin-only: Delete a user account
 const ADMIN_EMAILS = ["aaron.sharp2011@gmail.com"]
 
